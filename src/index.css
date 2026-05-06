@@ -1,0 +1,102 @@
+@import url('https://fonts.googleapis.com/css2?family=Baloo+2:wght@400;500;600;700;800&family=Inter:wght@400;500;600&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 240 20% 97%;
+    --foreground: 240 30% 15%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 240 30% 15%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 240 30% 15%;
+
+    --primary: 240 50% 35%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 330 65% 55%;
+    --secondary-foreground: 0 0% 100%;
+
+    --muted: 240 15% 92%;
+    --muted-foreground: 240 10% 46%;
+
+    --accent: 0 65% 55%;
+    --accent-foreground: 0 0% 100%;
+
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 240 12% 88%;
+    --input: 240 12% 88%;
+    --ring: 240 50% 35%;
+
+    --radius: 1rem;
+
+    --sun: 45 93% 58%;
+    --moon: 240 50% 35%;
+    --camp: 150 40% 45%;
+    --sun-bg: 45 100% 95%;
+    --moon-bg: 240 60% 95%;
+    --camp-bg: 150 50% 95%;
+
+    --sidebar-background: 0 0% 98%;
+    --sidebar-foreground: 240 5.3% 26.1%;
+    --sidebar-primary: 240 5.9% 10%;
+    --sidebar-primary-foreground: 0 0% 98%;
+    --sidebar-accent: 240 4.8% 95.9%;
+    --sidebar-accent-foreground: 240 5.9% 10%;
+    --sidebar-border: 220 13% 91%;
+    --sidebar-ring: 217.2 91.2% 59.8%;
+
+    font-family: 'Inter', sans-serif;
+  }
+
+  .dark {
+    --background: 240 25% 8%;
+    --foreground: 240 15% 95%;
+    --card: 240 25% 12%;
+    --card-foreground: 240 15% 95%;
+    --popover: 240 25% 12%;
+    --popover-foreground: 240 15% 95%;
+    --primary: 240 50% 50%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 330 65% 55%;
+    --secondary-foreground: 0 0% 100%;
+    --muted: 240 20% 18%;
+    --muted-foreground: 240 10% 60%;
+    --accent: 0 65% 55%;
+    --accent-foreground: 0 0% 100%;
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 240 20% 20%;
+    --input: 240 20% 20%;
+    --ring: 240 50% 50%;
+    --sun-bg: 45 50% 15%;
+    --moon-bg: 240 30% 15%;
+    --camp-bg: 150 30% 15%;
+    --sidebar-background: 240 5.9% 10%;
+    --sidebar-foreground: 240 4.8% 95.9%;
+    --sidebar-primary: 224.3 76.3% 48%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 240 3.7% 15.9%;
+    --sidebar-accent-foreground: 240 4.8% 95.9%;
+    --sidebar-border: 240 3.7% 15.9%;
+    --sidebar-ring: 217.2 91.2% 59.8%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+  h1, h2, h3, h4 {
+    font-family: 'Baloo 2', cursive;
+  }
+}

@@ -1,0 +1,1 @@
+ALTER TABLE public.events ADD COLUMN is_deleted boolean NOT NULL DEFAULT false;
