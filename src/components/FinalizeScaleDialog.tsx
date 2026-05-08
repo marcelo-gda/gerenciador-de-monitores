@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import { X, CheckCircle2, AlertCircle } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
@@ -7,12 +7,13 @@ import { toast } from "sonner";
 
 type MonitorLevel = "mestre" | "pleno" | "junior" | "trainee";
 
-const levelLabels: Record<string, string> = {
-  mestre: "Mestre",
-  pleno: "Pleno",
-  junior: "Junior",
-  trainee: "Trainee",
-};
+interface Hierarchy {
+  id: string;
+  emoji: string;
+  name: string;
+  slug: MonitorLevel;
+  sort_order: number;
+}
 
 const levelColors: Record<string, string> = {
   mestre: "bg-secondary/20 text-secondary border-secondary/30",
@@ -39,6 +40,7 @@ interface Props {
 
 const FinalizeScaleDialog = ({ eventId, eventTitle, monitors, onClose, onFinalized }: Props) => {
   const { user } = useAuth();
+  const [hierarchies, setHierarchies] = useState<Hierarchy[]>([]);
   const [saving, setSaving] = useState(false);
   const [levels, setLevels] = useState<Record<string, MonitorLevel>>(() => {
     const initial: Record<string, MonitorLevel> = {};
@@ -47,6 +49,16 @@ const FinalizeScaleDialog = ({ eventId, eventTitle, monitors, onClose, onFinaliz
     });
     return initial;
   });
+
+  useEffect(() => {
+    supabase
+      .from("hierarchies")
+      .select("id, emoji, name, slug, sort_order")
+      .order("sort_order", { ascending: true })
+      .then(({ data }) => {
+        if (data) setHierarchies(data as Hierarchy[]);
+      });
+  }, []);
 
   const confirmedMonitors = monitors.filter((m) => m.is_confirmed);
   const unselectedMonitors = monitors.filter((m) => !m.is_confirmed);
@@ -68,17 +80,18 @@ const FinalizeScaleDialog = ({ eventId, eventTitle, monitors, onClose, onFinaliz
         .eq("user_id", m.user_id);
     }
 
-    await supabase
-      .from("events")
-      .update({ is_locked: true })
-      .eq("id", eventId);
+    await supabase.from("events").update({ is_locked: true }).eq("id", eventId);
 
-    // Send notification to confirmed monitors
     if (user) {
+      const hierarchyLabel = (slug: string) =>
+        hierarchies.find((h) => h.slug === slug)
+          ? `${hierarchies.find((h) => h.slug === slug)!.emoji} ${hierarchies.find((h) => h.slug === slug)!.name}`
+          : slug;
+
       const notifications = confirmedMonitors.map((m) => ({
         sender_id: user.id,
         recipient_id: m.user_id,
-        content: `✅ Você foi escalado(a) para "${eventTitle}" como ${levelLabels[levels[m.user_id]] || levels[m.user_id]}! Confira os detalhes na escala.`,
+        content: `✅ Você foi escalado(a) para "${eventTitle}" como ${hierarchyLabel(levels[m.user_id])}! Confira os detalhes na escala.`,
       }));
       await supabase.from("messages").insert(notifications);
     }
@@ -118,7 +131,7 @@ const FinalizeScaleDialog = ({ eventId, eventTitle, monitors, onClose, onFinaliz
             </p>
           </div>
         ) : (
-          <div className="max-h-60 space-y-2 overflow-y-auto mb-4">
+          <div className="max-h-64 space-y-2 overflow-y-auto mb-4 pr-1">
             <p className="text-xs font-semibold text-camp mb-1">✅ Escalados ({confirmedMonitors.length}):</p>
             {confirmedMonitors.map((m) => (
               <div
@@ -126,26 +139,35 @@ const FinalizeScaleDialog = ({ eventId, eventTitle, monitors, onClose, onFinaliz
                 className="flex items-center gap-2 rounded-lg border-2 border-camp bg-camp/10 p-3"
               >
                 <CheckCircle2 className="h-4 w-4 text-camp shrink-0" />
-                <span className="text-sm font-medium text-foreground flex-1">{m.display_name}</span>
+                <span className="text-sm font-medium text-foreground flex-1 min-w-0 truncate">
+                  {m.display_name}
+                </span>
                 <select
                   value={levels[m.user_id] || ""}
-                  onChange={(e) => setLevels({ ...levels, [m.user_id]: e.target.value as MonitorLevel })}
-                  className={`rounded-full px-2 py-1 text-xs font-semibold outline-none border ${
-                    levels[m.user_id] ? levelColors[levels[m.user_id]] : "border-destructive/50 bg-destructive/5 text-destructive"
+                  onChange={(e) =>
+                    setLevels({ ...levels, [m.user_id]: e.target.value as MonitorLevel })
+                  }
+                  className={`shrink-0 rounded-full px-2 py-1 text-xs font-semibold outline-none border ${
+                    levels[m.user_id]
+                      ? levelColors[levels[m.user_id]]
+                      : "border-destructive/50 bg-destructive/5 text-destructive"
                   }`}
                 >
                   <option value="">Cargo...</option>
-                  <option value="mestre">Mestre</option>
-                  <option value="pleno">Pleno</option>
-                  <option value="junior">Junior</option>
-                  <option value="trainee">Trainee</option>
+                  {hierarchies.map((h) => (
+                    <option key={h.id} value={h.slug}>
+                      {h.emoji} {h.name}
+                    </option>
+                  ))}
                 </select>
               </div>
             ))}
 
             {unselectedMonitors.length > 0 && (
               <>
-                <p className="text-xs font-semibold text-muted-foreground mt-3 mb-1">Não escalados ({unselectedMonitors.length}):</p>
+                <p className="text-xs font-semibold text-muted-foreground mt-3 mb-1">
+                  Não escalados ({unselectedMonitors.length}):
+                </p>
                 {unselectedMonitors.map((m) => (
                   <div
                     key={m.user_id}

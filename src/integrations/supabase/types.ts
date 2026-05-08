@@ -183,6 +183,7 @@ export type Database = {
           sort_order: number
           title: string
           updated_at: string
+          visible_to: string[]
         }
         Insert: {
           content?: string
@@ -192,6 +193,7 @@ export type Database = {
           sort_order?: number
           title: string
           updated_at?: string
+          visible_to?: string[]
         }
         Update: {
           content?: string
@@ -201,8 +203,175 @@ export type Database = {
           sort_order?: number
           title?: string
           updated_at?: string
+          visible_to?: string[]
         }
         Relationships: []
+      }
+      hierarchies: {
+        Row: {
+          description: string
+          emoji: string
+          id: string
+          name: string
+          slug: string
+          sort_order: number
+        }
+        Insert: {
+          description?: string
+          emoji?: string
+          id?: string
+          name: string
+          slug: string
+          sort_order?: number
+        }
+        Update: {
+          description?: string
+          emoji?: string
+          id?: string
+          name?: string
+          slug?: string
+          sort_order?: number
+        }
+        Relationships: []
+      }
+      roles: {
+        Row: {
+          description: string
+          emoji: string
+          id: string
+          name: string
+          slug: string
+          sort_order: number
+        }
+        Insert: {
+          description?: string
+          emoji?: string
+          id?: string
+          name: string
+          slug: string
+          sort_order?: number
+        }
+        Update: {
+          description?: string
+          emoji?: string
+          id?: string
+          name?: string
+          slug?: string
+          sort_order?: number
+        }
+        Relationships: []
+      }
+      party_settings: {
+        Row: {
+          cache_emoji: string
+          cache_value: number
+          duration_max: number
+          duration_min: number
+          id: string
+          incentive_message: string
+          teams_section_title: string
+          teams_visible_to: string[]
+          updated_at: string
+        }
+        Insert: {
+          cache_emoji?: string
+          cache_value?: number
+          duration_max?: number
+          duration_min?: number
+          id?: string
+          incentive_message?: string
+          teams_section_title?: string
+          teams_visible_to?: string[]
+          updated_at?: string
+        }
+        Update: {
+          cache_emoji?: string
+          cache_value?: number
+          duration_max?: number
+          duration_min?: number
+          id?: string
+          incentive_message?: string
+          teams_section_title?: string
+          teams_visible_to?: string[]
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      teams: {
+        Row: {
+          created_at: string
+          id: string
+          name: string
+          sort_order: number
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          name: string
+          sort_order?: number
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          name?: string
+          sort_order?: number
+        }
+        Relationships: []
+      }
+      team_roles: {
+        Row: {
+          emoji: string
+          hierarchy_id: string | null
+          hourly_rate: number
+          id: string
+          name: string
+          role_id: string | null
+          sort_order: number
+          team_id: string
+        }
+        Insert: {
+          emoji?: string
+          hierarchy_id?: string | null
+          hourly_rate?: number
+          id?: string
+          name: string
+          role_id?: string | null
+          sort_order?: number
+          team_id: string
+        }
+        Update: {
+          emoji?: string
+          hierarchy_id?: string | null
+          hourly_rate?: number
+          id?: string
+          name?: string
+          role_id?: string | null
+          sort_order?: number
+          team_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "team_roles_team_id_fkey"
+            columns: ["team_id"]
+            isOneToOne: false
+            referencedRelation: "teams"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "team_roles_hierarchy_id_fkey"
+            columns: ["hierarchy_id"]
+            isOneToOne: false
+            referencedRelation: "hierarchies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "team_roles_role_id_fkey"
+            columns: ["role_id"]
+            isOneToOne: false
+            referencedRelation: "roles"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       messages: {
         Row: {
@@ -236,8 +405,12 @@ export type Database = {
           admin_notes: string | null
           created_at: string
           display_name: string
+          hierarchy_ids: string[]
           id: string
+          identity: string | null
+          nickname: string | null
           phone: string | null
+          role_ids: string[]
           status: Database["public"]["Enums"]["user_status"]
           updated_at: string
         }
@@ -245,8 +418,12 @@ export type Database = {
           admin_notes?: string | null
           created_at?: string
           display_name: string
+          hierarchy_ids?: string[]
           id: string
+          identity?: string | null
+          nickname?: string | null
           phone?: string | null
+          role_ids?: string[]
           status?: Database["public"]["Enums"]["user_status"]
           updated_at?: string
         }
@@ -254,8 +431,12 @@ export type Database = {
           admin_notes?: string | null
           created_at?: string
           display_name?: string
+          hierarchy_ids?: string[]
           id?: string
+          identity?: string | null
+          nickname?: string | null
           phone?: string | null
+          role_ids?: string[]
           status?: Database["public"]["Enums"]["user_status"]
           updated_at?: string
         }
@@ -285,6 +466,10 @@ export type Database = {
     }
     Functions: {
       get_monitor_count: { Args: { _event_id: string }; Returns: number }
+      get_profile_emails: {
+        Args: Record<string, never>
+        Returns: { user_id: string; email: string }[]
+      }
       get_total_slots: { Args: { _event_id: string }; Returns: number }
       has_role: {
         Args: {

@@ -5,13 +5,15 @@ import gdaLogo from "@/assets/gda-logo.png";
 import { Link } from "react-router-dom";
 import EventCard from "@/components/EventCard";
 import InfoSection from "@/components/InfoSection";
+import FuncoesSection from "@/components/FuncoesSection";
+import MonitoresSection from "@/components/MonitoresSection";
 import CreateEventForm from "@/components/CreateEventForm";
 
 import MessageButton from "@/components/MessageButton";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 
-type Tab = "escala" | "info" | "especiais";
+type Tab = "escala" | "info" | "especiais" | "funcoes" | "monitores";
 type ScaleTab = "open" | "finalized" | "past" | "trash";
 type TimeFilter = "all" | "this_week" | "next_week" | "this_month";
 type ShiftFilter = "all" | "sun" | "moon" | "camp";
@@ -303,6 +305,22 @@ const Index = () => {
           >
             ⭐ Eventos Especiais
           </button>
+          <button
+            onClick={() => setTab("funcoes")}
+            className={`flex items-center gap-1 sm:gap-1.5 rounded-full px-3 sm:px-4 py-1.5 text-xs sm:text-sm font-semibold transition-colors whitespace-nowrap ${
+              tab === "funcoes" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted"
+            }`}
+          >
+            🏅 Funções
+          </button>
+          <button
+            onClick={() => setTab("monitores")}
+            className={`flex items-center gap-1 sm:gap-1.5 rounded-full px-3 sm:px-4 py-1.5 text-xs sm:text-sm font-semibold transition-colors whitespace-nowrap ${
+              tab === "monitores" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted"
+            }`}
+          >
+            👥 Monitores
+          </button>
           {(isAdmin || isSpecialUser) && tab === "escala" && (
             <button
               onClick={() => setShowCreateForm(true)}
@@ -414,6 +432,14 @@ const Index = () => {
         ) : tab === "info" ? (
           <motion.div key="info" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
             <InfoSection />
+          </motion.div>
+        ) : tab === "funcoes" ? (
+          <motion.div key="funcoes" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+            <FuncoesSection />
+          </motion.div>
+        ) : tab === "monitores" ? (
+          <motion.div key="monitores" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+            <MonitoresSection />
           </motion.div>
         ) : (
           <motion.div key="especiais" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>

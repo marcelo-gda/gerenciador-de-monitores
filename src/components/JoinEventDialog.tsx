@@ -1,17 +1,17 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import { X, Plus } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
 
-type BonusTag = "protagonista" | "midia" | "cronista";
-
-const bonusOptions: { value: BonusTag; emoji: string; label: string; desc: string }[] = [
-  { value: "protagonista", emoji: "🅿️", label: "Protagonista", desc: "+10% mensal" },
-  { value: "midia", emoji: "🎥", label: "Mídia", desc: "Valor do Júnior" },
-  { value: "cronista", emoji: "📜", label: "Cronista", desc: "+R$15 por festa" },
-];
+interface SpecialRole {
+  id: string;
+  emoji: string;
+  name: string;
+  slug: string;
+  description: string;
+}
 
 interface Props {
   eventId: string;
@@ -23,14 +23,24 @@ interface Props {
 
 const JoinEventDialog = ({ eventId, eventTitle, eventEmoji, onClose, onJoined }: Props) => {
   const { user } = useAuth();
-  const [selectedTags, setSelectedTags] = useState<Set<BonusTag>>(new Set());
+  const [roles, setRoles] = useState<SpecialRole[]>([]);
+  const [selectedTags, setSelectedTags] = useState<Set<string>>(new Set());
   const [joining, setJoining] = useState(false);
 
-  const toggleTag = (tag: BonusTag) => {
+  useEffect(() => {
+    supabase
+      .from("roles")
+      .select("id, emoji, name, slug, description")
+      .order("sort_order", { ascending: true })
+      .then(({ data }) => {
+        if (data) setRoles(data);
+      });
+  }, []);
+
+  const toggleTag = (slug: string) => {
     setSelectedTags((prev) => {
       const next = new Set(prev);
-      if (next.has(tag)) next.delete(tag);
-      else next.add(tag);
+      if (next.has(slug)) next.delete(slug); else next.add(slug);
       return next;
     });
   };
@@ -54,7 +64,10 @@ const JoinEventDialog = ({ eventId, eventTitle, eventEmoji, onClose, onJoined }:
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-foreground/40 backdrop-blur-sm p-4" onClick={onClose}>
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-foreground/40 backdrop-blur-sm p-4"
+      onClick={onClose}
+    >
       <motion.div
         initial={{ scale: 0.95, opacity: 0 }}
         animate={{ scale: 1, opacity: 1 }}
@@ -74,30 +87,34 @@ const JoinEventDialog = ({ eventId, eventTitle, eventEmoji, onClose, onJoined }:
           Confirmar entrada em <strong>{eventTitle}</strong>?
         </p>
 
-        <div className="mb-4">
-          <p className="text-xs font-semibold text-foreground mb-2">Bônus (opcional):</p>
-          <div className="space-y-1.5">
-            {bonusOptions.map((b) => {
-              const active = selectedTags.has(b.value);
-              return (
-                <button
-                  key={b.value}
-                  type="button"
-                  onClick={() => toggleTag(b.value)}
-                  className={`w-full flex items-center gap-2 rounded-lg border-2 p-2.5 text-left text-sm transition-colors ${
-                    active
-                      ? "border-primary bg-primary/10 text-primary"
-                      : "border-border bg-background text-muted-foreground hover:border-primary/30"
-                  }`}
-                >
-                  <span className="text-base">{b.emoji}</span>
-                  <span className="font-semibold">{b.label}</span>
-                  <span className="ml-auto text-xs opacity-70">{b.desc}</span>
-                </button>
-              );
-            })}
+        {roles.length > 0 && (
+          <div className="mb-4">
+            <p className="text-xs font-semibold text-foreground mb-2">Funções especiais (opcional):</p>
+            <div className="space-y-1.5">
+              {roles.map((r) => {
+                const active = selectedTags.has(r.slug);
+                return (
+                  <button
+                    key={r.id}
+                    type="button"
+                    onClick={() => toggleTag(r.slug)}
+                    className={`w-full flex items-center gap-2 rounded-lg border-2 p-2.5 text-left text-sm transition-colors ${
+                      active
+                        ? "border-primary bg-primary/10 text-primary"
+                        : "border-border bg-background text-muted-foreground hover:border-primary/30"
+                    }`}
+                  >
+                    <span className="text-base shrink-0">{r.emoji}</span>
+                    <span className="font-semibold">{r.name}</span>
+                    <span className="ml-auto text-xs opacity-70 text-right leading-tight max-w-[120px] truncate">
+                      {r.description}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
           </div>
-        </div>
+        )}
 
         <div className="flex gap-2">
           <button
