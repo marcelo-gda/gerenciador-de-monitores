@@ -291,7 +291,6 @@ const MasterSettings = ({ readOnly = false }: { readOnly?: boolean }) => {
             name: role.name,
             hourly_rate: role.hourly_rate,
             hierarchy_id: role.hierarchy_id || null,
-            role_id: role.role_id || null,
           })
           .eq("id", role.id);
         if (roleError) console.error("handleSaveTeam role error:", roleError);
@@ -576,14 +575,9 @@ const MasterSettings = ({ readOnly = false }: { readOnly?: boolean }) => {
                         </div>
                         {/* Row 2: name + rate */}
                         <div className="flex items-center gap-2">
-                          <Input
-                            value={role.name}
-                            onChange={(e) =>
-                              updateTeamRole(team.id, idx, { name: e.target.value })
-                            }
-                            placeholder="Nome do cargo"
-                            className="flex-1 h-8 text-xs"
-                          />
+                          <span className="flex-1 text-xs font-medium text-foreground px-1 truncate">
+                            {role.name || <span className="text-muted-foreground italic">Selecione a hierarquia</span>}
+                          </span>
                           <div className="relative w-28 shrink-0">
                             <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-xs text-muted-foreground select-none">
                               R$

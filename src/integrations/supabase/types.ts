@@ -54,6 +54,8 @@ export type Database = {
           id: string
           is_confirmed: boolean
           level: Database["public"]["Enums"]["monitor_level"] | null
+          no_transport: boolean
+          transport_amount: number
           user_id: string
         }
         Insert: {
@@ -63,6 +65,8 @@ export type Database = {
           id?: string
           is_confirmed?: boolean
           level?: Database["public"]["Enums"]["monitor_level"] | null
+          no_transport?: boolean
+          transport_amount?: number
           user_id: string
         }
         Update: {
@@ -72,6 +76,8 @@ export type Database = {
           id?: string
           is_confirmed?: boolean
           level?: Database["public"]["Enums"]["monitor_level"] | null
+          no_transport?: boolean
+          transport_amount?: number
           user_id?: string
         }
         Relationships: [
@@ -379,7 +385,9 @@ export type Database = {
           created_at: string
           id: string
           is_read: boolean
+          message_type: string
           recipient_id: string | null
+          related_user_id: string | null
           sender_id: string
         }
         Insert: {
@@ -387,7 +395,9 @@ export type Database = {
           created_at?: string
           id?: string
           is_read?: boolean
+          message_type?: string
           recipient_id?: string | null
+          related_user_id?: string | null
           sender_id: string
         }
         Update: {
@@ -395,7 +405,9 @@ export type Database = {
           created_at?: string
           id?: string
           is_read?: boolean
+          message_type?: string
           recipient_id?: string | null
+          related_user_id?: string | null
           sender_id?: string
         }
         Relationships: []

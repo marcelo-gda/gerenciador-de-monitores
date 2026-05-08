@@ -185,7 +185,7 @@ const InfoSection = () => {
     );
   }
 
-  const visibleSections = sections.filter(canSee);
+  const visibleSections = sections.filter(canSee).filter((s) => s.section_key !== "cargos");
 
   return (
     <section className="mx-auto max-w-3xl space-y-2.5">
