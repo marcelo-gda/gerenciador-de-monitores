@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { motion } from "framer-motion";
-import { CalendarDays, Info, Plus, Shield, LogOut, User, Inbox, Mail, Trash2, Search } from "lucide-react";
+import { CalendarDays, Info, Plus, Shield, LogOut, User, Mail, Trash2, Search, Banknote, History, ClipboardList } from "lucide-react";
 import gdaLogo from "@/assets/gda-logo.png";
 import { Link } from "react-router-dom";
 import EventCard from "@/components/EventCard";
@@ -321,6 +321,12 @@ const Index = () => {
           >
             👥 Monitores
           </button>
+          <Link
+            to="/pagamentos"
+            className="flex items-center gap-1 sm:gap-1.5 rounded-full px-3 sm:px-4 py-1.5 text-xs sm:text-sm font-semibold transition-colors whitespace-nowrap text-muted-foreground hover:bg-muted"
+          >
+            <Banknote className="h-3.5 w-3.5 sm:h-4 sm:w-4" /> Pagamentos
+          </Link>
           {(isAdmin || isSpecialUser) && tab === "escala" && (
             <button
               onClick={() => setShowCreateForm(true)}
@@ -347,13 +353,13 @@ const Index = () => {
                 className={`flex items-center gap-1 sm:gap-1.5 rounded-full px-3 sm:px-4 py-1.5 text-xs sm:text-sm font-semibold transition-colors whitespace-nowrap shrink-0 ${
                   scaleTab === "finalized" ? "bg-camp text-primary-foreground" : "text-muted-foreground hover:bg-muted"
                 }`}>
-                ✅ Finalizadas {futureFinalized.length > 0 && <span className="ml-1 rounded-full bg-primary-foreground/20 px-1.5 text-[10px] sm:text-xs">{futureFinalized.length}</span>}
+                <ClipboardList className="h-3 w-3 sm:h-3.5 sm:w-3.5" /> Escalados {futureFinalized.length > 0 && <span className="ml-1 rounded-full bg-primary-foreground/20 px-1.5 text-[10px] sm:text-xs">{futureFinalized.length}</span>}
               </button>
               <button onClick={() => setScaleTab("past")}
                 className={`flex items-center gap-1 sm:gap-1.5 rounded-full px-3 sm:px-4 py-1.5 text-xs sm:text-sm font-semibold transition-colors whitespace-nowrap shrink-0 ${
                   scaleTab === "past" ? "bg-muted-foreground text-primary-foreground" : "text-muted-foreground hover:bg-muted"
                 }`}>
-                📜 Passadas {pastEvents.length > 0 && <span className="ml-1 rounded-full bg-primary-foreground/20 px-1.5 text-[10px] sm:text-xs">{pastEvents.length}</span>}
+                <History className="h-3 w-3 sm:h-3.5 sm:w-3.5" /> Passadas {pastEvents.length > 0 && <span className="ml-1 rounded-full bg-primary-foreground/20 px-1.5 text-[10px] sm:text-xs">{pastEvents.length}</span>}
               </button>
               {isAdmin && (
                 <button onClick={() => setScaleTab("trash")}

@@ -15,12 +15,14 @@ interface UserWithRole {
 }
 
 const roleLabel: Record<string, string> = {
+  master_admin: "🌟 Master Admin",
   admin: "👑 Admin",
   special_user: "⭐ Coordenador",
   normal_user: "👤 Monitor",
 };
 
 const roleBadgeClass: Record<string, string> = {
+  master_admin: "bg-yellow-400/20 text-yellow-700",
   admin: "bg-primary/20 text-primary",
   special_user: "bg-secondary/40 text-secondary-foreground",
   normal_user: "bg-muted text-muted-foreground",
@@ -29,6 +31,7 @@ const roleBadgeClass: Record<string, string> = {
 interface UserCardProps {
   u: UserWithRole;
   isAdmin: boolean;
+  isMasterAdmin: boolean;
   isSpecialUser: boolean;
   editingProfile: string | null;
   editName: string;
@@ -47,7 +50,7 @@ interface UserCardProps {
 }
 
 const UserCard = ({
-  u, isAdmin, isSpecialUser, editingProfile, editName, editPhone, notesValue,
+  u, isAdmin, isMasterAdmin, isSpecialUser, editingProfile, editName, editPhone, notesValue,
   onSetEditName, onSetEditPhone, onStartEdit, onCancelEdit, onSaveProfile,
   onUpdateStatus, onUpdateRole, onNotesChange, onSaveNotes, notesChanged,
 }: UserCardProps) => {
@@ -125,7 +128,7 @@ const UserCard = ({
               ✏️ Editar
             </button>
           )}
-          {isAdmin && (
+          {isMasterAdmin && (
             <select
               value={u.roles[0] || "normal_user"}
               onChange={(e) => onUpdateRole(u.id, e.target.value)}
@@ -134,6 +137,7 @@ const UserCard = ({
               <option value="normal_user">👤 Monitor</option>
               <option value="special_user">⭐ Coordenador</option>
               <option value="admin">👑 Admin</option>
+              <option value="master_admin">🌟 Master Admin</option>
             </select>
           )}
         </div>
@@ -237,7 +241,7 @@ const GoogleCalendarSync = () => {
 };
 
 const AdminPage = () => {
-  const { isAdmin, isSpecialUser } = useAuth();
+  const { isAdmin, isMasterAdmin, isSpecialUser } = useAuth();
   const [users, setUsers] = useState<UserWithRole[]>([]);
   const [loading, setLoading] = useState(true);
   const [editingNotes, setEditingNotes] = useState<Record<string, string>>({});
@@ -280,7 +284,7 @@ const AdminPage = () => {
 
   const updateRole = async (userId: string, newRole: string) => {
     await supabase.from("user_roles").delete().eq("user_id", userId);
-    const { error } = await supabase.from("user_roles").insert([{ user_id: userId, role: newRole as "admin" | "special_user" | "normal_user" }]);
+    const { error } = await supabase.from("user_roles").insert([{ user_id: userId, role: newRole as "admin" | "master_admin" | "special_user" | "normal_user" }]);
     if (error) { toast.error("Erro ao atualizar cargo"); return; }
     toast.success("Cargo atualizado!");
     fetchUsers();
@@ -324,6 +328,7 @@ const AdminPage = () => {
       key={u.id}
       u={u}
       isAdmin={isAdmin}
+      isMasterAdmin={isMasterAdmin}
       isSpecialUser={isSpecialUser}
       editingProfile={editingProfile}
       editName={editName}

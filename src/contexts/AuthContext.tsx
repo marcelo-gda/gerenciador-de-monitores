@@ -2,7 +2,7 @@ import { createContext, useContext, useEffect, useState, ReactNode } from "react
 import { supabase } from "@/integrations/supabase/client";
 import type { User, Session } from "@supabase/supabase-js";
 
-type AppRole = "admin" | "special_user" | "normal_user";
+type AppRole = "admin" | "master_admin" | "special_user" | "normal_user";
 type UserStatus = "pending" | "approved" | "rejected";
 
 interface Profile {
@@ -18,6 +18,7 @@ interface AuthContextType {
   profile: Profile | null;
   roles: AppRole[];
   isAdmin: boolean;
+  isMasterAdmin: boolean;
   isSpecialUser: boolean;
   isApproved: boolean;
   loading: boolean;
@@ -109,13 +110,14 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     setRoles([]);
   };
 
-  const isAdmin = roles.includes("admin");
+  const isAdmin = roles.includes("admin") || roles.includes("master_admin");
+  const isMasterAdmin = roles.includes("master_admin");
   const isSpecialUser = roles.includes("special_user");
   const isApproved = profile?.status === "approved";
 
   return (
     <AuthContext.Provider
-      value={{ user, session, profile, roles, isAdmin, isSpecialUser, isApproved, loading, signOut, refreshProfile }}
+      value={{ user, session, profile, roles, isAdmin, isMasterAdmin, isSpecialUser, isApproved, loading, signOut, refreshProfile }}
     >
       {children}
     </AuthContext.Provider>

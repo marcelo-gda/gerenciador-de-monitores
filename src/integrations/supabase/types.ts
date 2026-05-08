@@ -379,6 +379,51 @@ export type Database = {
           },
         ]
       }
+      monitor_payments: {
+        Row: {
+          id: string
+          monitor_id: string
+          period_label: string
+          calculated_amount: number
+          admin_amount: number | null
+          status: string
+          notes: string | null
+          monitor_notes: string | null
+          paid_at: string | null
+          monitor_confirmed: boolean
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          monitor_id: string
+          period_label: string
+          calculated_amount?: number
+          admin_amount?: number | null
+          status?: string
+          notes?: string | null
+          monitor_notes?: string | null
+          paid_at?: string | null
+          monitor_confirmed?: boolean
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          monitor_id?: string
+          period_label?: string
+          calculated_amount?: number
+          admin_amount?: number | null
+          status?: string
+          notes?: string | null
+          monitor_notes?: string | null
+          paid_at?: string | null
+          monitor_confirmed?: boolean
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       messages: {
         Row: {
           content: string
@@ -422,6 +467,7 @@ export type Database = {
           identity: string | null
           nickname: string | null
           phone: string | null
+          pix_key: string | null
           role_ids: string[]
           status: Database["public"]["Enums"]["user_status"]
           updated_at: string
@@ -435,6 +481,7 @@ export type Database = {
           identity?: string | null
           nickname?: string | null
           phone?: string | null
+          pix_key?: string | null
           role_ids?: string[]
           status?: Database["public"]["Enums"]["user_status"]
           updated_at?: string
@@ -448,6 +495,7 @@ export type Database = {
           identity?: string | null
           nickname?: string | null
           phone?: string | null
+          pix_key?: string | null
           role_ids?: string[]
           status?: Database["public"]["Enums"]["user_status"]
           updated_at?: string
@@ -493,7 +541,7 @@ export type Database = {
       is_approved: { Args: { _user_id: string }; Returns: boolean }
     }
     Enums: {
-      app_role: "admin" | "special_user" | "normal_user"
+      app_role: "admin" | "master_admin" | "special_user" | "normal_user"
       event_type: "sun" | "moon" | "camp"
       monitor_level: "mestre" | "pleno" | "junior" | "trainee"
       user_status: "pending" | "approved" | "rejected"
@@ -624,7 +672,7 @@ export type CompositeTypes<
 export const Constants = {
   public: {
     Enums: {
-      app_role: ["admin", "special_user", "normal_user"],
+      app_role: ["admin", "master_admin", "special_user", "normal_user"],
       event_type: ["sun", "moon", "camp"],
       monitor_level: ["mestre", "pleno", "junior", "trainee"],
       user_status: ["pending", "approved", "rejected"],
