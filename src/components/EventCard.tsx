@@ -192,14 +192,22 @@ const EventCard = ({ event, onRefresh }: EventCardProps) => {
 
   const handleSoftDelete = async () => {
     if (!confirm("Mover este evento para a lixeira?")) return;
-    const { error } = await supabase.from("events").update({ is_deleted: true }).eq("id", event.id);
-    if (error) toast.error("Erro ao arquivar evento");
+    const { data, error } = await supabase
+      .from("events")
+      .update({ is_deleted: true })
+      .eq("id", event.id)
+      .select("id");
+    if (error || !data?.length) toast.error("Erro ao arquivar evento");
     else { toast.success("Evento movido para a lixeira"); onRefresh(); }
   };
 
   const handleRestore = async () => {
-    const { error } = await supabase.from("events").update({ is_deleted: false }).eq("id", event.id);
-    if (error) toast.error("Erro ao restaurar evento");
+    const { data, error } = await supabase
+      .from("events")
+      .update({ is_deleted: false })
+      .eq("id", event.id)
+      .select("id");
+    if (error || !data?.length) toast.error("Erro ao restaurar evento");
     else { toast.success("Evento restaurado!"); onRefresh(); }
   };
 
