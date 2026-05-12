@@ -327,14 +327,6 @@ const Index = () => {
           >
             <Banknote className="h-3.5 w-3.5 sm:h-4 sm:w-4" /> Pagamentos
           </Link>
-          {(isAdmin || isSpecialUser) && tab === "escala" && (
-            <button
-              onClick={() => setShowCreateForm(true)}
-              className="ml-auto flex items-center gap-1 rounded-full bg-primary px-2.5 sm:px-3 py-1.5 text-xs sm:text-sm font-semibold text-primary-foreground hover:bg-primary/90 whitespace-nowrap"
-            >
-              <Plus className="h-3.5 w-3.5 sm:h-4 sm:w-4" /> Nova
-            </button>
-          )}
         </div>
       </header>
 
@@ -367,6 +359,14 @@ const Index = () => {
                     scaleTab === "trash" ? "bg-destructive text-destructive-foreground" : "text-muted-foreground hover:bg-muted"
                   }`}>
                   <Trash2 className="h-3 w-3 sm:h-3.5 sm:w-3.5" /> Lixeira {deletedEvents.length > 0 && <span className="ml-1 rounded-full bg-destructive-foreground/20 px-1.5 text-[10px] sm:text-xs">{deletedEvents.length}</span>}
+                </button>
+              )}
+              {(isAdmin || isSpecialUser) && (
+                <button
+                  onClick={() => setShowCreateForm(true)}
+                  className="ml-auto flex items-center gap-1 rounded-full bg-primary px-2.5 sm:px-3 py-1.5 text-xs sm:text-sm font-semibold text-primary-foreground hover:bg-primary/90 whitespace-nowrap shrink-0"
+                >
+                  <Plus className="h-3.5 w-3.5 sm:h-4 sm:w-4" /> Nova
                 </button>
               )}
             </div>

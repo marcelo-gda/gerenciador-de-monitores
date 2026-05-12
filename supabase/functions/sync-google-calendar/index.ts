@@ -1,3 +1,4 @@
+// deno-lint-ignore-file no-explicit-any
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
@@ -6,13 +7,7 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
-// ========== CONFIGURAÇÃO DE PREFIXOS ==========
-// Adicione novos prefixos aqui para importar outros tipos de eventos
-const EVENT_PREFIXES = ["FESTA"];
-// Exemplos futuros: ["FESTA", "EVENTO", "TREINAMENTO"]
-// ===============================================
-
-const VISIBILITY_WINDOW_DAYS = 30;
+const DEFAULT_CALENDAR_ID = "marceloparreiras@gmail.com";
 
 interface GoogleCalendarEvent {
   id: string;
@@ -42,7 +37,6 @@ async function getAccessToken(serviceAccount: {
 
   const signInput = `${header}.${payload}`;
 
-  // Import RSA private key
   const pemContents = serviceAccount.private_key
     .replace(/-----BEGIN PRIVATE KEY-----/, "")
     .replace(/-----END PRIVATE KEY-----/, "")
@@ -86,19 +80,6 @@ async function getAccessToken(serviceAccount: {
   return tokenData.access_token;
 }
 
-function matchesPrefix(summary: string): { matches: boolean; cleanTitle: string } {
-  const upper = summary.trim().toUpperCase();
-  for (const prefix of EVENT_PREFIXES) {
-    if (upper.startsWith(prefix)) {
-      // Remove prefix and optional separators (space, dash, colon)
-      let clean = summary.trim().substring(prefix.length).replace(/^[\s\-:]+/, "").trim();
-      if (!clean) clean = summary.trim(); // fallback to full title
-      return { matches: true, cleanTitle: clean };
-    }
-  }
-  return { matches: false, cleanTitle: summary };
-}
-
 function parseEventDateTime(gcalEvent: GoogleCalendarEvent) {
   const startStr = gcalEvent.start?.dateTime || gcalEvent.start?.date || "";
   const endStr = gcalEvent.end?.dateTime || gcalEvent.end?.date || "";
@@ -128,10 +109,9 @@ function parseEventDateTime(gcalEvent: GoogleCalendarEvent) {
   } else {
     // All-day event
     eventDate = startStr;
-    const endD = endStr;
-    if (endD && endD !== startStr) {
+    if (endStr && endStr !== startStr) {
       // Google uses exclusive end date for all-day, subtract 1
-      const d = new Date(endD);
+      const d = new Date(endStr);
       d.setDate(d.getDate() - 1);
       const adjusted = d.toISOString().split("T")[0];
       if (adjusted !== eventDate) endDate = adjusted;
@@ -143,31 +123,31 @@ function parseEventDateTime(gcalEvent: GoogleCalendarEvent) {
   return { eventDate, endDate, startTime, endTime };
 }
 
-Deno.serve(async (req) => {
+// @ts-ignore Deno is available at runtime
+Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
 
   try {
+    // @ts-ignore Deno is available at runtime
     const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
+    // @ts-ignore Deno is available at runtime
     const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    // @ts-ignore Deno is available at runtime
     const GOOGLE_SERVICE_ACCOUNT_JSON = Deno.env.get("GOOGLE_SERVICE_ACCOUNT_JSON");
-    const GOOGLE_CALENDAR_ID = Deno.env.get("GOOGLE_CALENDAR_ID");
+    // @ts-ignore Deno is available at runtime
+    const GOOGLE_CALENDAR_ID = Deno.env.get("GOOGLE_CALENDAR_ID") || DEFAULT_CALENDAR_ID;
 
     if (!GOOGLE_SERVICE_ACCOUNT_JSON) {
       throw new Error("GOOGLE_SERVICE_ACCOUNT_JSON not configured");
-    }
-    if (!GOOGLE_CALENDAR_ID) {
-      throw new Error("GOOGLE_CALENDAR_ID not configured");
     }
 
     const serviceAccount = JSON.parse(GOOGLE_SERVICE_ACCOUNT_JSON);
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
-    // Authenticate with Google
     const accessToken = await getAccessToken(serviceAccount);
 
-    // Fetch events from now onwards
     const timeMin = new Date().toISOString();
     const calendarUrl = `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(
       GOOGLE_CALENDAR_ID
@@ -185,25 +165,19 @@ Deno.serve(async (req) => {
     const calData = await calRes.json();
     const gcalEvents: GoogleCalendarEvent[] = calData.items || [];
 
-    // Filter by prefix
-    const relevantEvents = gcalEvents.filter(
-      (e) => e.summary && matchesPrefix(e.summary).matches && e.status !== "cancelled"
+    const activeEvents = gcalEvents.filter(
+      (e) => e.summary && e.status !== "cancelled"
     );
-
-    // Also check for cancelled events to handle deletions
-    const cancelledEvents = gcalEvents.filter(
-      (e) => e.status === "cancelled"
-    );
+    const cancelledEvents = gcalEvents.filter((e) => e.status === "cancelled");
 
     let eventsCreated = 0;
     let eventsUpdated = 0;
 
-    for (const gcalEvent of relevantEvents) {
-      const { cleanTitle } = matchesPrefix(gcalEvent.summary!);
+    for (const gcalEvent of activeEvents) {
+      const title = gcalEvent.summary!;
       const { eventDate, endDate, startTime, endTime } = parseEventDateTime(gcalEvent);
-      const address = gcalEvent.location || "Local não informado";
+      const address = gcalEvent.location || "A definir";
 
-      // Check if event already exists
       const { data: existing } = await supabase
         .from("events")
         .select("id")
@@ -211,32 +185,30 @@ Deno.serve(async (req) => {
         .maybeSingle();
 
       if (existing) {
-        // Update existing event
         await supabase
           .from("events")
           .update({
-            title: cleanTitle,
+            title,
             event_date: eventDate,
             end_date: endDate,
             start_time: startTime,
             end_time: endTime,
-            address: address,
+            address,
           })
           .eq("google_event_id", gcalEvent.id);
         eventsUpdated++;
       } else {
-        // Create new event
         await supabase.from("events").insert({
           google_event_id: gcalEvent.id,
-          title: cleanTitle,
+          title,
           event_date: eventDate,
           end_date: endDate,
           start_time: startTime,
           end_time: endTime,
-          address: address,
-          emoji: "🎉",
+          address,
+          emoji: "📅",
           type: "sun",
-          total_slots: null, // Aberto/Ilimitado
+          total_slots: null,
           is_locked: false,
           is_deleted: false,
         });
@@ -244,7 +216,6 @@ Deno.serve(async (req) => {
       }
     }
 
-    // Soft-delete cancelled events
     for (const cancelled of cancelledEvents) {
       await supabase
         .from("events")
@@ -252,7 +223,6 @@ Deno.serve(async (req) => {
         .eq("google_event_id", cancelled.id);
     }
 
-    // Log sync
     await supabase.from("google_calendar_sync_log").insert({
       events_created: eventsCreated,
       events_updated: eventsUpdated,
@@ -271,9 +241,10 @@ Deno.serve(async (req) => {
     console.error("Sync error:", error);
     const errorMessage = error instanceof Error ? error.message : "Unknown error";
 
-    // Try to log the error
     try {
+      // @ts-ignore Deno is available at runtime
       const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
+      // @ts-ignore Deno is available at runtime
       const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
       const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
       await supabase.from("google_calendar_sync_log").insert({

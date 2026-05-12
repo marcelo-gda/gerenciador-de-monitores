@@ -15,15 +15,15 @@ interface UserWithRole {
 }
 
 const roleLabel: Record<string, string> = {
-  master_admin: "🌟 Master Admin",
-  admin: "👑 Admin",
+  master_admin: "👑 Master Admin",
+  admin: "🛡️ Admin",
   special_user: "⭐ Coordenador",
   normal_user: "👤 Monitor",
 };
 
 const roleBadgeClass: Record<string, string> = {
-  master_admin: "bg-yellow-400/20 text-yellow-700",
-  admin: "bg-primary/20 text-primary",
+  master_admin: "bg-yellow-500/20 text-yellow-700",
+  admin: "bg-blue-500/20 text-blue-700",
   special_user: "bg-secondary/40 text-secondary-foreground",
   normal_user: "bg-muted text-muted-foreground",
 };
@@ -135,9 +135,8 @@ const UserCard = ({
               className="rounded-lg border border-input bg-background px-2 py-1.5 text-xs outline-none"
             >
               <option value="normal_user">👤 Monitor</option>
-              <option value="special_user">⭐ Coordenador</option>
-              <option value="admin">👑 Admin</option>
-              <option value="master_admin">🌟 Master Admin</option>
+              <option value="admin">🛡️ Admin</option>
+              <option value="master_admin">👑 Master Admin</option>
             </select>
           )}
         </div>
