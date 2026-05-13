@@ -2,8 +2,9 @@ import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
-import { Shield, ShieldCheck, ShieldX, UserCheck, UserX, Users, ArrowLeft, Save, StickyNote, BarChart3, ChevronDown, ChevronRight, RefreshCw, CalendarSync, Loader2 } from "lucide-react";
+import { Shield, ShieldCheck, ShieldX, UserCheck, UserX, Users, Save, StickyNote, BarChart3, ChevronDown, ChevronRight, RefreshCw, CalendarSync, Loader2 } from "lucide-react";
 import { Link } from "react-router-dom";
+import AppNavbar from "@/components/AppNavbar";
 
 interface Hierarchy { id: string; emoji: string; name: string; }
 interface SpecialRole { id: string; emoji: string; name: string; }
@@ -450,24 +451,21 @@ const AdminPage = () => {
 
   return (
     <div className="min-h-screen bg-background">
-      <header className="sticky top-0 z-50 border-b border-border bg-card/80 backdrop-blur-lg">
-        <div className="container flex items-center gap-3 py-3">
-          <Link to="/" className="rounded-lg p-1.5 text-muted-foreground hover:bg-muted">
-            <ArrowLeft className="h-5 w-5" />
-          </Link>
-          <h1 className="font-display text-xl font-extrabold text-primary">
-            <Shield className="mr-1 inline h-5 w-5" />
+      <AppNavbar />
+
+      <main className="container max-w-3xl space-y-8 py-6">
+        <div className="flex items-center justify-between gap-3">
+          <h1 className="font-display text-xl font-extrabold text-primary flex items-center gap-2">
+            <Shield className="h-5 w-5" />
             Painel de Controle
           </h1>
           {isAdmin && (
-            <Link to="/reports" className="ml-auto flex items-center gap-1.5 rounded-full bg-primary/10 px-3 py-1.5 text-sm font-semibold text-primary hover:bg-primary/20">
+            <Link to="/reports" className="flex items-center gap-1.5 rounded-full bg-primary/10 px-3 py-1.5 text-sm font-semibold text-primary hover:bg-primary/20">
               <BarChart3 className="h-4 w-4" /> Relatórios
             </Link>
           )}
         </div>
-      </header>
 
-      <main className="container max-w-3xl space-y-8 py-6">
         {isAdmin && <GoogleCalendarSync />}
 
         {loading ? (
