@@ -61,13 +61,19 @@ const MonitoresSection = () => {
   const { data: profiles = [], isLoading } = useQuery({
     queryKey: ["monitors-profiles"],
     queryFn: async () => {
+      const { data: adminRoles } = await supabase
+        .from("user_roles")
+        .select("user_id")
+        .in("role", ["admin", "master_admin"]);
+      const adminIds = new Set((adminRoles ?? []).map((r: any) => r.user_id as string));
+
       const { data, error } = await supabase
         .from("profiles")
         .select("id, display_name, nickname, identity, hierarchy_ids, role_ids")
         .eq("status", "approved")
         .order("display_name", { ascending: true });
       if (error) throw error;
-      return (data ?? []) as Profile[];
+      return ((data ?? []) as Profile[]).filter((p) => !adminIds.has(p.id));
     },
   });
 
