@@ -1,6 +1,7 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { ArrowLeft, Banknote, ChevronDown, ChevronUp, Copy, MessageCircle } from "lucide-react";
+import AppNavbar from "@/components/AppNavbar";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
@@ -139,12 +140,12 @@ async function buildSummaries(filterUserId?: string): Promise<MonitorSummary[]> 
         const tr = teamRoles.find(
           (r) => r.team_id === team.id && r.hierarchy_id === hierarchy.id
         );
-        if (tr) hourlyRate = tr.hourly_rate;
+        if (tr) hourlyRate = tr.hourly_rate ?? 0;
       }
     }
 
     const hours = calcHours(event.start_time, event.end_time);
-    const eventValue = hourlyRate * hours;
+    const eventValue = (hourlyRate || 0) * hours || 0;
     const transport = em.no_transport ? 0 : (em.transport_amount ?? 0);
 
     const entry: EventEntry = {
@@ -920,13 +921,13 @@ function MonitorView({ userId }: { userId: string }) {
                             size="sm"
                             variant="outline"
                             disabled
-                            className="pointer-events-none"
+                            className="pointer-events-none opacity-60"
                           >
-                            📎
+                            📎 Enviar comprovante
                           </Button>
                         </span>
                       </TooltipTrigger>
-                      <TooltipContent>Enviar comprovante — em breve</TooltipContent>
+                      <TooltipContent>Em breve</TooltipContent>
                     </Tooltip>
                   </div>
                 </CardContent>
@@ -946,27 +947,23 @@ export default function PaymentsPage() {
 
   return (
     <div className="min-h-screen bg-background">
-      <header className="sticky top-0 z-50 border-b border-border bg-card/80 backdrop-blur-lg">
-        <div className="px-3 sm:container flex items-center gap-3 py-3">
-          <Link
-            to="/"
-            className="rounded-lg p-1.5 text-muted-foreground hover:bg-muted"
-          >
+      <AppNavbar />
+
+      <main className="px-3 sm:container max-w-3xl mx-auto py-4 sm:py-6">
+        <div className="flex items-center gap-3 mb-6">
+          <Link to="/" className="rounded-lg p-1.5 text-muted-foreground hover:bg-muted">
             <ArrowLeft className="h-5 w-5" />
           </Link>
-          <h1 className="font-display text-xl font-extrabold text-primary flex items-center gap-2">
+          <h1 className="font-display text-xl font-extrabold text-primary flex items-center gap-2 flex-1">
             <Banknote className="h-5 w-5" />
             Pagamentos
           </h1>
           {isAdmin && (
-            <span className="ml-auto rounded-full bg-primary/10 px-2.5 py-1 text-xs font-semibold text-primary">
+            <span className="rounded-full bg-primary/10 px-2.5 py-1 text-xs font-semibold text-primary">
               Visão Admin
             </span>
           )}
         </div>
-      </header>
-
-      <main className="px-3 sm:container max-w-3xl mx-auto py-4 sm:py-6">
         {isAdmin ? (
           <AdminView />
         ) : user ? (

@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
-import { Shield, ShieldCheck, ShieldX, UserCheck, UserX, Users, Save, StickyNote, BarChart3, ChevronDown, ChevronRight, RefreshCw, CalendarSync, Loader2 } from "lucide-react";
+import { ArrowLeft, Shield, ShieldCheck, ShieldX, UserCheck, UserX, Users, Save, StickyNote, BarChart3, ChevronDown, ChevronRight, RefreshCw, CalendarSync, Loader2 } from "lucide-react";
 import { Link } from "react-router-dom";
 import AppNavbar from "@/components/AppNavbar";
 
@@ -454,8 +454,11 @@ const AdminPage = () => {
       <AppNavbar />
 
       <main className="container max-w-3xl space-y-8 py-6">
-        <div className="flex items-center justify-between gap-3">
-          <h1 className="font-display text-xl font-extrabold text-primary flex items-center gap-2">
+        <div className="flex items-center gap-3">
+          <Link to="/" className="rounded-lg p-1.5 text-muted-foreground hover:bg-muted">
+            <ArrowLeft className="h-5 w-5" />
+          </Link>
+          <h1 className="font-display text-xl font-extrabold text-primary flex items-center gap-2 flex-1">
             <Shield className="h-5 w-5" />
             Painel de Controle
           </h1>

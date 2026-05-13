@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { ArrowLeft, User, Trophy, Calendar, Clock, MapPin, Copy, Check, KeyRound, Pencil } from "lucide-react";
+import AppNavbar from "@/components/AppNavbar";
 import { motion, AnimatePresence } from "framer-motion";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
@@ -155,18 +156,17 @@ const ProfilePage = () => {
 
   return (
     <div className="min-h-screen bg-background">
-      <header className="sticky top-0 z-50 border-b border-border bg-card/80 backdrop-blur-lg">
-        <div className="container flex items-center gap-3 py-3">
+      <AppNavbar />
+
+      <main className="container max-w-2xl space-y-6 py-6">
+        <div className="flex items-center gap-3">
           <Link to="/" className="rounded-lg p-1.5 text-muted-foreground hover:bg-muted">
             <ArrowLeft className="h-5 w-5" />
           </Link>
-          <h1 className="font-display text-xl font-extrabold text-primary">
-            <User className="mr-1 inline h-5 w-5" /> Meu Perfil
+          <h1 className="font-display text-xl font-extrabold text-primary flex items-center gap-2">
+            <User className="h-5 w-5" /> Meu Perfil
           </h1>
         </div>
-      </header>
-
-      <main className="container max-w-2xl space-y-6 py-6">
         {/* Profile Card */}
         <div className="rounded-lg border-2 border-border bg-card p-5">
           <div className="flex items-center gap-4">

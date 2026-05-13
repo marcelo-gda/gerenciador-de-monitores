@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { ArrowLeft, Inbox, MailOpen, CheckCheck } from "lucide-react";
+import AppNavbar from "@/components/AppNavbar";
 import { motion } from "framer-motion";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
@@ -154,13 +155,15 @@ const InboxPage = () => {
 
   return (
     <div className="min-h-screen bg-background">
-      <header className="sticky top-0 z-50 border-b border-border bg-card/80 backdrop-blur-lg">
-        <div className="container flex items-center gap-3 py-3">
+      <AppNavbar />
+
+      <main className="container max-w-2xl py-6 space-y-4">
+        <div className="flex items-center gap-3">
           <Link to="/" className="rounded-lg p-1.5 text-muted-foreground hover:bg-muted">
             <ArrowLeft className="h-5 w-5" />
           </Link>
-          <h1 className="font-display text-xl font-extrabold text-primary">
-            <Inbox className="mr-1 inline h-5 w-5" />
+          <h1 className="font-display text-xl font-extrabold text-primary flex items-center gap-2">
+            <Inbox className="h-5 w-5" />
             {isAdmin ? "Inbox" : "Notificações"}
           </h1>
           {unreadCount > 0 && (
@@ -169,9 +172,6 @@ const InboxPage = () => {
             </span>
           )}
         </div>
-      </header>
-
-      <main className="container max-w-2xl py-6 space-y-4">
         {/* Filter bar */}
         <div className="flex items-center gap-2">
           <button
