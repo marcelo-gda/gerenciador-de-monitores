@@ -29,6 +29,12 @@ interface EventData {
   monitors: Monitor[];
 }
 
+interface DayEvent {
+  event: EventData;
+  isFirst: boolean;
+  isLast: boolean;
+}
+
 interface WeekCalendarProps {
   events: EventData[];
   onEventClick: (event: EventData) => void;
@@ -38,7 +44,7 @@ const DAYS_PT = ["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"];
 
 function getWeekDays(weekOffset: number): Date[] {
   const today = new Date();
-  const dow = today.getDay(); // 0=Sun
+  const dow = today.getDay();
   const toMonday = dow === 0 ? -6 : 1 - dow;
   const monday = new Date(today);
   monday.setDate(today.getDate() + toMonday + weekOffset * 7);
@@ -71,11 +77,29 @@ function getEventStatus(event: EventData): EventStatus {
   return "open";
 }
 
+function isGreenEvent(title: string): boolean {
+  return /acampamento|gdc/i.test(title);
+}
+
 const statusCard: Record<EventStatus, string> = {
   open: "bg-primary/10 border-primary/30 text-primary hover:bg-primary/20",
   finalized: "bg-camp/10 border-camp/40 text-camp hover:bg-camp/20",
   past: "bg-muted/60 border-border text-muted-foreground hover:bg-muted",
 };
+
+const greenCard = "bg-green-100 border-green-300 text-green-800 hover:bg-green-200 dark:bg-green-900/30 dark:border-green-700 dark:text-green-300";
+
+function getChipColor(event: EventData): string {
+  if (isGreenEvent(event.title)) return greenCard;
+  return statusCard[getEventStatus(event)];
+}
+
+function getRoundedClass(isFirst: boolean, isLast: boolean): string {
+  if (isFirst && isLast) return "rounded";
+  if (isFirst) return "rounded-l rounded-r-none";
+  if (isLast) return "rounded-r rounded-l-none";
+  return "rounded-none";
+}
 
 const WeekCalendar = ({ events, onEventClick }: WeekCalendarProps) => {
   const [weekOffset, setWeekOffset] = useState(0);
@@ -85,20 +109,32 @@ const WeekCalendar = ({ events, onEventClick }: WeekCalendarProps) => {
   const todayYMD = useMemo(() => toYMD(new Date()), []);
 
   const eventsByDate = useMemo(() => {
-    const map: Record<string, EventData[]> = {};
+    const map: Record<string, DayEvent[]> = {};
     for (const day of weekDays) map[toYMD(day)] = [];
+
     for (const event of events) {
-      if (!event.is_deleted && map[event.event_date] !== undefined) {
-        map[event.event_date].push(event);
+      if (event.is_deleted) continue;
+      const startYMD = event.event_date;
+      const endYMD = event.end_date || event.event_date;
+      const [sy, sm, sd] = startYMD.split("-").map(Number);
+      const [ey, em, ed] = endYMD.split("-").map(Number);
+      const startDate = new Date(sy, sm - 1, sd);
+      const endDate = new Date(ey, em - 1, ed);
+
+      for (const d = new Date(startDate); d <= endDate; d.setDate(d.getDate() + 1)) {
+        const ymd = toYMD(d);
+        if (map[ymd] !== undefined) {
+          map[ymd].push({ event, isFirst: ymd === startYMD, isLast: ymd === endYMD });
+        }
       }
     }
+
     for (const key of Object.keys(map)) {
-      map[key].sort((a, b) => a.start_time.localeCompare(b.start_time));
+      map[key].sort((a, b) => a.event.start_time.localeCompare(b.event.start_time));
     }
     return map;
   }, [events, weekDays]);
 
-  // On week change: scroll so today is the 2nd visible column on mobile
   useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
@@ -117,7 +153,6 @@ const WeekCalendar = ({ events, onEventClick }: WeekCalendarProps) => {
 
   return (
     <div className="space-y-3">
-      {/* Navigation */}
       <div className="flex items-center justify-between gap-2">
         <button
           onClick={() => setWeekOffset((n) => n - 1)}
@@ -136,7 +171,6 @@ const WeekCalendar = ({ events, onEventClick }: WeekCalendarProps) => {
         </button>
       </div>
 
-      {/* Legend */}
       <div className="flex items-center gap-3 text-[11px] text-muted-foreground">
         <span className="flex items-center gap-1">
           <span className="inline-block h-2 w-2 rounded-sm bg-primary/30 border border-primary/40" />
@@ -147,24 +181,22 @@ const WeekCalendar = ({ events, onEventClick }: WeekCalendarProps) => {
           Escalado
         </span>
         <span className="flex items-center gap-1">
+          <span className="inline-block h-2 w-2 rounded-sm bg-green-200 border border-green-300" />
+          Acampamento
+        </span>
+        <span className="flex items-center gap-1">
           <span className="inline-block h-2 w-2 rounded-sm bg-muted border border-border" />
           Passado
         </span>
       </div>
 
-      {/* Grid — min-w only on mobile, fills container on desktop */}
       <div ref={scrollRef} className="overflow-x-auto">
         <div className="grid grid-cols-7 gap-1 min-w-[700px] sm:min-w-0">
-          {/* Day headers */}
           {weekDays.map((day, i) => {
             const isToday = toYMD(day) === todayYMD;
             return (
               <div key={i} className="flex flex-col items-center pb-1">
-                <span
-                  className={`text-[11px] font-semibold ${
-                    isToday ? "text-primary" : "text-muted-foreground"
-                  }`}
-                >
+                <span className={`text-[11px] font-semibold ${isToday ? "text-primary" : "text-muted-foreground"}`}>
                   {DAYS_PT[i]}
                 </span>
                 <span
@@ -178,7 +210,6 @@ const WeekCalendar = ({ events, onEventClick }: WeekCalendarProps) => {
             );
           })}
 
-          {/* Event cells */}
           {weekDays.map((day, i) => {
             const ymd = toYMD(day);
             const dayEvents = eventsByDate[ymd] || [];
@@ -188,23 +219,26 @@ const WeekCalendar = ({ events, onEventClick }: WeekCalendarProps) => {
               <div
                 key={`cell-${i}`}
                 className={`min-h-[80px] rounded-lg border p-0.5 space-y-0.5 ${
-                  isToday
-                    ? "border-primary/30 bg-primary/5"
-                    : "border-border bg-card/40"
+                  isToday ? "border-primary/30 bg-primary/5" : "border-border bg-card/40"
                 }`}
               >
-                {dayEvents.map((event) => {
-                  const status = getEventStatus(event);
+                {dayEvents.map(({ event, isFirst, isLast }) => {
+                  const colorClass = getChipColor(event);
+                  const roundedClass = getRoundedClass(isFirst, isLast);
                   return (
                     <button
-                      key={event.id}
+                      key={`${event.id}-${ymd}`}
                       onClick={() => onEventClick(event)}
-                      className={`block w-full text-left rounded border px-1 py-0.5 text-[10px] leading-tight transition-colors ${statusCard[status]}`}
+                      className={`block w-full text-left border px-1 py-0.5 text-[10px] leading-tight transition-colors ${colorClass} ${roundedClass}`}
                     >
-                      <div className="font-semibold truncate">
-                        {event.emoji} {event.title}
-                      </div>
-                      <div className="opacity-70">{event.start_time}</div>
+                      {isFirst ? (
+                        <>
+                          <div className="font-semibold truncate">{event.emoji} {event.title}</div>
+                          <div className="opacity-70">{event.start_time}</div>
+                        </>
+                      ) : (
+                        <div className="truncate opacity-80">{event.emoji}</div>
+                      )}
                     </button>
                   );
                 })}

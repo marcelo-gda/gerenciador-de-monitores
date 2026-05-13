@@ -217,7 +217,13 @@ const Index = () => {
       );
     }
     if (shiftFilter !== "all") {
-      filtered = filtered.filter((e) => e.type === shiftFilter);
+      if (shiftFilter === "camp") {
+        filtered = filtered.filter(
+          (e) => e.type === "camp" || /acampamento|gdc/i.test(e.title)
+        );
+      } else {
+        filtered = filtered.filter((e) => e.type === shiftFilter);
+      }
     }
     return filtered;
   };

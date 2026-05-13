@@ -68,6 +68,20 @@ const badgeStyles: Record<string, string> = {
   camp: "bg-camp/20 text-camp",
 };
 
+function isGreenEvent(title: string): boolean {
+  return /acampamento|gdc/i.test(title);
+}
+
+function getCardStyle(title: string, type: string): string {
+  if (isGreenEvent(title)) return "bg-green-50 border-green-200 dark:bg-green-950/40 dark:border-green-800";
+  return typeStyles[type] || "bg-card border-border";
+}
+
+function getBadgeStyle(title: string, type: string): string {
+  if (isGreenEvent(title)) return "bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-400";
+  return badgeStyles[type] || "";
+}
+
 const EventCard = ({ event, onRefresh }: EventCardProps) => {
   const { user, isAdmin, isSpecialUser, isApproved } = useAuth();
   const [joining, setJoining] = useState(false);
@@ -245,7 +259,7 @@ const EventCard = ({ event, onRefresh }: EventCardProps) => {
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.3 }}
-        className={`relative rounded-lg border-2 p-3 sm:p-5 ${typeStyles[event.type] || "bg-card border-border"} transition-shadow hover:shadow-md ${
+        className={`relative rounded-lg border-2 p-3 sm:p-5 ${getCardStyle(event.title, event.type)} transition-shadow hover:shadow-md ${
           isPastEvent ? "opacity-50" : ""
         } ${isFinalized ? "ring-2 ring-camp/40" : event.is_locked ? "ring-2 ring-destructive/30" : ""} ${saving ? "pointer-events-none" : ""}`}
       >
@@ -305,7 +319,7 @@ const EventCard = ({ event, onRefresh }: EventCardProps) => {
               </button>
             )}
             {!editing && (
-              <span className={`rounded-full px-3 py-1 font-display text-xs font-semibold ${badgeStyles[event.type] || ""}`}>
+              <span className={`rounded-full px-3 py-1 font-display text-xs font-semibold ${getBadgeStyle(event.title, event.type)}`}>
                 {new Date(event.event_date + "T12:00:00").toLocaleDateString("pt-BR", { day: "numeric", month: "numeric" })}
                 {event.end_date && event.end_date !== event.event_date && (
                   <> — {new Date(event.end_date + "T12:00:00").toLocaleDateString("pt-BR", { day: "numeric", month: "numeric" })}</>

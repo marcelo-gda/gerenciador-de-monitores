@@ -29,13 +29,18 @@ interface EventData {
   monitors: Monitor[];
 }
 
+interface DayEvent {
+  event: EventData;
+  isFirst: boolean;
+  isLast: boolean;
+}
+
 interface MonthCalendarProps {
   events: EventData[];
   onEventClick: (event: EventData) => void;
 }
 
 const DAYS_PT = ["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"];
-
 const MAX_CHIPS = 3;
 
 function toYMD(d: Date): string {
@@ -50,19 +55,15 @@ function toYMD(d: Date): string {
 
 function getMonthWeeks(year: number, month: number): Date[][] {
   const firstDay = new Date(year, month, 1);
-  const dow = firstDay.getDay(); // 0=Sun
+  const dow = firstDay.getDay();
   const daysBack = dow === 0 ? 6 : dow - 1;
-
   const lastDay = new Date(year, month + 1, 0);
   const lastDow = lastDay.getDay();
   const daysForward = lastDow === 0 ? 0 : 7 - lastDow;
-
   const start = new Date(year, month, 1 - daysBack);
   const end = new Date(year, month + 1, daysForward);
-
   const weeks: Date[][] = [];
   const current = new Date(start);
-
   while (current <= end) {
     const week: Date[] = [];
     for (let i = 0; i < 7; i++) {
@@ -71,7 +72,6 @@ function getMonthWeeks(year: number, month: number): Date[][] {
     }
     weeks.push(week);
   }
-
   return weeks;
 }
 
@@ -84,11 +84,30 @@ function getEventStatus(event: EventData): "open" | "finalized" | "past" {
   return "open";
 }
 
-const chipStyle: Record<"open" | "finalized" | "past", string> = {
+function isGreenEvent(title: string): boolean {
+  return /acampamento|gdc/i.test(title);
+}
+
+const statusChip: Record<"open" | "finalized" | "past", string> = {
   open: "bg-primary/10 border-primary/20 text-primary hover:bg-primary/20",
   finalized: "bg-camp/10 border-camp/20 text-camp hover:bg-camp/20",
   past: "bg-muted/50 border-border/50 text-muted-foreground hover:bg-muted",
 };
+
+const greenChip =
+  "bg-green-100 border-green-300 text-green-800 hover:bg-green-200 dark:bg-green-900/30 dark:border-green-700 dark:text-green-300";
+
+function getChipColor(event: EventData): string {
+  if (isGreenEvent(event.title)) return greenChip;
+  return statusChip[getEventStatus(event)];
+}
+
+function getRoundedClass(isFirst: boolean, isLast: boolean): string {
+  if (isFirst && isLast) return "rounded";
+  if (isFirst) return "rounded-l rounded-r-none";
+  if (isLast) return "rounded-r rounded-l-none";
+  return "rounded-none";
+}
 
 const MonthCalendar = ({ events, onEventClick }: MonthCalendarProps) => {
   const today = new Date();
@@ -98,36 +117,47 @@ const MonthCalendar = ({ events, onEventClick }: MonthCalendarProps) => {
   const todayYMD = useMemo(() => toYMD(today), []);
   const weeks = useMemo(() => getMonthWeeks(year, month), [year, month]);
 
+  // Collect all visible dates
+  const visibleDates = useMemo(() => {
+    const set = new Set<string>();
+    for (const week of weeks) for (const day of week) set.add(toYMD(day));
+    return set;
+  }, [weeks]);
+
   const eventsByDate = useMemo(() => {
-    const map: Record<string, EventData[]> = {};
+    const map: Record<string, DayEvent[]> = {};
+    for (const ymd of visibleDates) map[ymd] = [];
+
     for (const event of events) {
-      if (!event.is_deleted) {
-        if (!map[event.event_date]) map[event.event_date] = [];
-        map[event.event_date].push(event);
+      if (event.is_deleted) continue;
+      const startYMD = event.event_date;
+      const endYMD = event.end_date || event.event_date;
+      const [sy, sm, sd] = startYMD.split("-").map(Number);
+      const [ey, em, ed] = endYMD.split("-").map(Number);
+      const startDate = new Date(sy, sm - 1, sd);
+      const endDate = new Date(ey, em - 1, ed);
+
+      for (const d = new Date(startDate); d <= endDate; d.setDate(d.getDate() + 1)) {
+        const ymd = toYMD(d);
+        if (map[ymd] !== undefined) {
+          map[ymd].push({ event, isFirst: ymd === startYMD, isLast: ymd === endYMD });
+        }
       }
     }
+
     for (const key of Object.keys(map)) {
-      map[key].sort((a, b) => a.start_time.localeCompare(b.start_time));
+      map[key].sort((a, b) => a.event.start_time.localeCompare(b.event.start_time));
     }
     return map;
-  }, [events]);
+  }, [events, visibleDates]);
 
   const prevMonth = () => {
-    if (month === 0) {
-      setYear((y) => y - 1);
-      setMonth(11);
-    } else {
-      setMonth((m) => m - 1);
-    }
+    if (month === 0) { setYear((y) => y - 1); setMonth(11); }
+    else setMonth((m) => m - 1);
   };
-
   const nextMonth = () => {
-    if (month === 11) {
-      setYear((y) => y + 1);
-      setMonth(0);
-    } else {
-      setMonth((m) => m + 1);
-    }
+    if (month === 11) { setYear((y) => y + 1); setMonth(0); }
+    else setMonth((m) => m + 1);
   };
 
   const monthLabel = new Date(year, month, 1).toLocaleDateString("pt-BR", {
@@ -137,7 +167,6 @@ const MonthCalendar = ({ events, onEventClick }: MonthCalendarProps) => {
 
   return (
     <div className="space-y-3">
-      {/* Navigation */}
       <div className="flex items-center justify-between gap-2">
         <button
           onClick={prevMonth}
@@ -156,22 +185,18 @@ const MonthCalendar = ({ events, onEventClick }: MonthCalendarProps) => {
         </button>
       </div>
 
-      {/* Grid */}
       <div className="overflow-x-auto">
         <div className="min-w-[560px] sm:min-w-0">
           {/* Day headers */}
           <div className="grid grid-cols-7 gap-1 mb-1">
             {DAYS_PT.map((d) => (
-              <div
-                key={d}
-                className="py-1 text-center text-[11px] font-semibold text-muted-foreground"
-              >
+              <div key={d} className="py-1 text-center text-[11px] font-semibold text-muted-foreground">
                 {d}
               </div>
             ))}
           </div>
 
-          {/* Week rows */}
+          {/* Weeks */}
           <div className="space-y-1">
             {weeks.map((week, wi) => (
               <div key={wi} className="grid grid-cols-7 gap-1">
@@ -194,7 +219,6 @@ const MonthCalendar = ({ events, onEventClick }: MonthCalendarProps) => {
                           : "border-border/40 bg-muted/10"
                       }`}
                     >
-                      {/* Day number */}
                       <div className="mb-0.5 flex">
                         {isToday ? (
                           <span className="flex h-5 w-5 items-center justify-center rounded-full bg-primary text-[10px] font-bold text-primary-foreground">
@@ -211,24 +235,26 @@ const MonthCalendar = ({ events, onEventClick }: MonthCalendarProps) => {
                         )}
                       </div>
 
-                      {/* Event chips */}
                       <div className="space-y-0.5">
-                        {shown.map((event) => {
-                          const status = getEventStatus(event);
+                        {shown.map(({ event, isFirst, isLast }) => {
+                          const colorClass = getChipColor(event);
+                          const roundedClass = getRoundedClass(isFirst, isLast);
                           return (
                             <button
-                              key={event.id}
+                              key={`${event.id}-${ymd}`}
                               onClick={() => onEventClick(event)}
-                              className={`w-full truncate rounded border px-1 py-0.5 text-left text-[10px] leading-tight transition-colors ${chipStyle[status]}`}
+                              className={`w-full text-left border px-1 py-0.5 text-[10px] leading-tight transition-colors ${colorClass} ${roundedClass}`}
                             >
-                              {event.emoji} {event.title}
+                              {isFirst ? (
+                                <span className="truncate block">{event.emoji} {event.title}</span>
+                              ) : (
+                                <span className="truncate block opacity-80">{event.emoji}</span>
+                              )}
                             </button>
                           );
                         })}
                         {extra > 0 && (
-                          <p className="pl-0.5 text-[10px] text-muted-foreground">
-                            +{extra} mais
-                          </p>
+                          <p className="pl-0.5 text-[10px] text-muted-foreground">+{extra} mais</p>
                         )}
                       </div>
                     </div>
