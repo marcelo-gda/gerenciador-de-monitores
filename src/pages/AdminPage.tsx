@@ -5,6 +5,9 @@ import { toast } from "sonner";
 import { Shield, ShieldCheck, ShieldX, UserCheck, UserX, Users, ArrowLeft, Save, StickyNote, BarChart3, ChevronDown, ChevronRight, RefreshCw, CalendarSync, Loader2 } from "lucide-react";
 import { Link } from "react-router-dom";
 
+interface Hierarchy { id: string; emoji: string; name: string; }
+interface SpecialRole { id: string; emoji: string; name: string; }
+
 interface UserWithRole {
   id: string;
   display_name: string;
@@ -12,6 +15,8 @@ interface UserWithRole {
   status: string;
   roles: string[];
   admin_notes: string | null;
+  hierarchy_ids: string[];
+  role_ids: string[];
 }
 
 const roleLabel: Record<string, string> = {
@@ -28,6 +33,16 @@ const roleBadgeClass: Record<string, string> = {
   normal_user: "bg-muted text-muted-foreground",
 };
 
+const getTopRole = (roles: string[]): string => {
+  if (roles.includes("master_admin")) return "master_admin";
+  if (roles.includes("admin")) return "admin";
+  if (roles.includes("special_user")) return "special_user";
+  return "normal_user";
+};
+
+const isAdminRole = (roles: string[]) =>
+  roles.includes("admin") || roles.includes("master_admin");
+
 interface UserCardProps {
   u: UserWithRole;
   isAdmin: boolean;
@@ -36,9 +51,15 @@ interface UserCardProps {
   editingProfile: string | null;
   editName: string;
   editPhone: string;
+  editHierarchyIds: string[];
+  editRoleIds: string[];
   notesValue: string;
+  hierarchies: Hierarchy[];
+  specialRoles: SpecialRole[];
   onSetEditName: (v: string) => void;
   onSetEditPhone: (v: string) => void;
+  onToggleHierarchyId: (id: string) => void;
+  onToggleRoleId: (id: string) => void;
   onStartEdit: (u: UserWithRole) => void;
   onCancelEdit: () => void;
   onSaveProfile: (id: string) => void;
@@ -50,16 +71,19 @@ interface UserCardProps {
 }
 
 const UserCard = ({
-  u, isAdmin, isMasterAdmin, isSpecialUser, editingProfile, editName, editPhone, notesValue,
-  onSetEditName, onSetEditPhone, onStartEdit, onCancelEdit, onSaveProfile,
+  u, isAdmin, isMasterAdmin, isSpecialUser, editingProfile, editName, editPhone,
+  editHierarchyIds, editRoleIds, notesValue, hierarchies, specialRoles,
+  onSetEditName, onSetEditPhone, onToggleHierarchyId, onToggleRoleId,
+  onStartEdit, onCancelEdit, onSaveProfile,
   onUpdateStatus, onUpdateRole, onNotesChange, onSaveNotes, notesChanged,
 }: UserCardProps) => {
   const isEditing = editingProfile === u.id;
+  const userIsAdmin = isAdminRole(u.roles);
 
   return (
     <div className="rounded-lg border-2 border-border bg-card p-4 space-y-3">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="min-w-0">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0 flex-1">
           {isEditing ? (
             <div className="space-y-2">
               <input
@@ -74,7 +98,47 @@ const UserCard = ({
                 className="w-full rounded-lg border border-input bg-background px-2 py-1 text-sm outline-none"
                 placeholder="WhatsApp"
               />
-              <div className="flex gap-2">
+
+              {/* Hierarquia e funções: somente para normal_user / special_user */}
+              {!userIsAdmin && hierarchies.length > 0 && (
+                <div className="space-y-1.5 pt-1">
+                  <p className="text-xs font-semibold text-muted-foreground">Hierarquias</p>
+                  <div className="flex flex-wrap gap-x-4 gap-y-1.5">
+                    {hierarchies.map((h) => (
+                      <label key={h.id} className="flex items-center gap-1.5 cursor-pointer select-none text-xs">
+                        <input
+                          type="checkbox"
+                          checked={editHierarchyIds.includes(h.id)}
+                          onChange={() => onToggleHierarchyId(h.id)}
+                          className="h-3.5 w-3.5 accent-primary"
+                        />
+                        {h.emoji} {h.name}
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {!userIsAdmin && specialRoles.length > 0 && (
+                <div className="space-y-1.5">
+                  <p className="text-xs font-semibold text-muted-foreground">Funções Especiais</p>
+                  <div className="flex flex-wrap gap-x-4 gap-y-1.5">
+                    {specialRoles.map((r) => (
+                      <label key={r.id} className="flex items-center gap-1.5 cursor-pointer select-none text-xs">
+                        <input
+                          type="checkbox"
+                          checked={editRoleIds.includes(r.id)}
+                          onChange={() => onToggleRoleId(r.id)}
+                          className="h-3.5 w-3.5 accent-primary"
+                        />
+                        {r.emoji} {r.name}
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <div className="flex gap-2 pt-1">
                 <button onClick={() => onSaveProfile(u.id)} className="rounded-lg bg-camp px-3 py-1 text-xs font-semibold text-primary-foreground hover:opacity-90">
                   <Save className="inline h-3 w-3 mr-1" /> Salvar
                 </button>
@@ -95,7 +159,7 @@ const UserCard = ({
             </>
           )}
         </div>
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap gap-2 shrink-0">
           {u.status === "pending" && (
             <>
               <button
@@ -130,11 +194,12 @@ const UserCard = ({
           )}
           {isMasterAdmin && (
             <select
-              value={u.roles[0] || "normal_user"}
+              value={getTopRole(u.roles)}
               onChange={(e) => onUpdateRole(u.id, e.target.value)}
               className="rounded-lg border border-input bg-background px-2 py-1.5 text-xs outline-none"
             >
               <option value="normal_user">👤 Monitor</option>
+              <option value="special_user">⭐ Coordenador</option>
               <option value="admin">🛡️ Admin</option>
               <option value="master_admin">👑 Master Admin</option>
             </select>
@@ -248,6 +313,10 @@ const AdminPage = () => {
   const [editingProfile, setEditingProfile] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
   const [editPhone, setEditPhone] = useState("");
+  const [editHierarchyIds, setEditHierarchyIds] = useState<string[]>([]);
+  const [editRoleIds, setEditRoleIds] = useState<string[]>([]);
+  const [hierarchies, setHierarchies] = useState<Hierarchy[]>([]);
+  const [specialRoles, setSpecialRoles] = useState<SpecialRole[]>([]);
 
   const canView = isAdmin || isSpecialUser;
 
@@ -264,6 +333,8 @@ const AdminPage = () => {
         status: p.status,
         roles: allRoles.filter((r: any) => r.user_id === p.id).map((r: any) => r.role),
         admin_notes: p.admin_notes || null,
+        hierarchy_ids: (p.hierarchy_ids ?? []) as string[],
+        role_ids: (p.role_ids ?? []) as string[],
       }));
       setUsers(mapped);
     }
@@ -271,7 +342,12 @@ const AdminPage = () => {
   };
 
   useEffect(() => {
-    if (canView) fetchUsers();
+    if (!canView) return;
+    fetchUsers();
+    supabase.from("hierarchies").select("id, emoji, name").order("sort_order", { ascending: true })
+      .then(({ data }) => { if (data) setHierarchies(data as Hierarchy[]); });
+    supabase.from("roles").select("id, emoji, name").order("sort_order", { ascending: true })
+      .then(({ data }) => { if (data) setSpecialRoles(data as SpecialRole[]); });
   }, [canView]);
 
   const updateStatus = async (userId: string, status: "approved" | "rejected") => {
@@ -296,7 +372,17 @@ const AdminPage = () => {
   };
 
   const saveProfile = async (userId: string) => {
-    const { error } = await supabase.from("profiles").update({ display_name: editName, phone: editPhone || null }).eq("id", userId);
+    const targetUser = users.find((u) => u.id === userId);
+    const updateData: Record<string, unknown> = {
+      display_name: editName,
+      phone: editPhone || null,
+    };
+    // Only save hierarchy/role fields for non-admin users
+    if (targetUser && !isAdminRole(targetUser.roles)) {
+      updateData.hierarchy_ids = editHierarchyIds;
+      updateData.role_ids = editRoleIds;
+    }
+    const { error } = await supabase.from("profiles").update(updateData).eq("id", userId);
     if (error) { toast.error("Erro ao salvar perfil"); } else { toast.success("Perfil atualizado!"); setEditingProfile(null); fetchUsers(); }
   };
 
@@ -308,6 +394,16 @@ const AdminPage = () => {
     setEditingProfile(u.id);
     setEditName(u.display_name);
     setEditPhone(u.phone || "");
+    setEditHierarchyIds(u.hierarchy_ids);
+    setEditRoleIds(u.role_ids);
+  };
+
+  const handleToggleHierarchyId = (id: string) => {
+    setEditHierarchyIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+  };
+
+  const handleToggleRoleId = (id: string) => {
+    setEditRoleIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
   };
 
   if (!canView) {
@@ -332,10 +428,16 @@ const AdminPage = () => {
       editingProfile={editingProfile}
       editName={editName}
       editPhone={editPhone}
+      editHierarchyIds={editHierarchyIds}
+      editRoleIds={editRoleIds}
       notesValue={editingNotes[u.id] ?? u.admin_notes ?? ""}
+      hierarchies={hierarchies}
+      specialRoles={specialRoles}
       notesChanged={editingNotes[u.id] !== undefined && editingNotes[u.id] !== (u.admin_notes ?? "")}
       onSetEditName={setEditName}
       onSetEditPhone={setEditPhone}
+      onToggleHierarchyId={handleToggleHierarchyId}
+      onToggleRoleId={handleToggleRoleId}
       onStartEdit={handleStartEdit}
       onCancelEdit={() => setEditingProfile(null)}
       onSaveProfile={saveProfile}
@@ -366,7 +468,6 @@ const AdminPage = () => {
       </header>
 
       <main className="container max-w-3xl space-y-8 py-6">
-        {/* Google Calendar Sync Section */}
         {isAdmin && <GoogleCalendarSync />}
 
         {loading ? (
