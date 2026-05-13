@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { motion } from "framer-motion";
-import { CalendarDays, Info, Plus, Shield, LogOut, User, Mail, Trash2, Search, Banknote, History, ClipboardList } from "lucide-react";
+import { CalendarDays, Info, Plus, LayoutDashboard, LogOut, User, Mail, Trash2, Search, Banknote, History, ClipboardList } from "lucide-react";
 import gdaLogo from "@/assets/gda-logo.png";
 import { Link } from "react-router-dom";
 import EventCard from "@/components/EventCard";
@@ -271,8 +271,8 @@ const Index = () => {
               )}
             </Link>
             {isAdmin && (
-              <Link to="/admin" className="rounded-lg bg-primary/10 p-1.5 sm:p-2 text-primary hover:bg-primary/20" title="Painel de Controle">
-                <Shield className="h-4 w-4" />
+              <Link to="/admin" className="rounded-lg p-1.5 sm:p-2 text-muted-foreground hover:bg-muted" title="Painel de Controle">
+                <LayoutDashboard className="h-4 w-4" />
               </Link>
             )}
             <button onClick={signOut} className="rounded-lg p-1.5 sm:p-2 text-muted-foreground hover:bg-muted" title="Sair">
