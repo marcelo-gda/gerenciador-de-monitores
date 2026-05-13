@@ -68,7 +68,8 @@ async function buildSummaries(filterUserId?: string): Promise<MonitorSummary[]> 
       .from("events")
       .select("id, title, emoji, event_date, start_time, end_time, team")
       .lt("event_date", today)
-      .eq("is_deleted", false),
+      .eq("is_deleted", false)
+      .eq("is_paid", true),
     supabase.from("hierarchies").select("id, slug, name, emoji"),
     supabase.from("teams").select("id, sort_order, name"),
     supabase.from("team_roles").select("id, team_id, hierarchy_id, hourly_rate"),

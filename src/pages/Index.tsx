@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { motion } from "framer-motion";
-import { CalendarDays, Info, Plus, LayoutDashboard, LogOut, User, Mail, Trash2, Search, Banknote, History, ClipboardList } from "lucide-react";
+import { CalendarDays, Info, Plus, LayoutDashboard, LogOut, User, Mail, Trash2, Search, Banknote, History, ClipboardList, LayoutList, CalendarRange } from "lucide-react";
 import gdaLogo from "@/assets/gda-logo.png";
 import { Link } from "react-router-dom";
 import EventCard from "@/components/EventCard";
@@ -8,6 +8,9 @@ import InfoSection from "@/components/InfoSection";
 import FuncoesSection from "@/components/FuncoesSection";
 import MonitoresSection from "@/components/MonitoresSection";
 import CreateEventForm from "@/components/CreateEventForm";
+import WeekCalendar from "@/components/WeekCalendar";
+import MonthCalendar from "@/components/MonthCalendar";
+import CalendarEventModal from "@/components/CalendarEventModal";
 
 import MessageButton from "@/components/MessageButton";
 import { useAuth } from "@/contexts/AuthContext";
@@ -55,6 +58,10 @@ const Index = () => {
   const [timeFilter, setTimeFilter] = useState<TimeFilter>("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [shiftFilter, setShiftFilter] = useState<ShiftFilter>("all");
+  const [myOpenFilter, setMyOpenFilter] = useState(false);
+  const [myFinalizedFilter, setMyFinalizedFilter] = useState(false);
+  const [viewMode, setViewMode] = useState<"list" | "week" | "month">("list");
+  const [calendarEvent, setCalendarEvent] = useState<EventData | null>(null);
   const [unreadMessages, setUnreadMessages] = useState(0);
 
   const fetchEvents = useCallback(async () => {
@@ -202,8 +209,11 @@ const Index = () => {
     let filtered = list;
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
-      filtered = filtered.filter((e) =>
-        e.monitors.some((m) => m.display_name.toLowerCase().includes(q))
+      filtered = filtered.filter(
+        (e) =>
+          e.title.toLowerCase().includes(q) ||
+          e.address.toLowerCase().includes(q) ||
+          e.monitors.some((m) => m.display_name.toLowerCase().includes(q))
       );
     }
     if (shiftFilter !== "all") {
@@ -221,8 +231,26 @@ const Index = () => {
   };
 
   const pastEvents = applyFilters(getFilteredByTime(activeEvents.filter((e) => getEffectiveDate(e) < today)));
-  const futureOpen = applyFilters(getFilteredByTime(activeEvents.filter((e) => getEffectiveDate(e) >= today && !(e.is_locked && e.monitors.some((m) => m.is_confirmed)))));
-  const futureFinalized = applyFilters(getFilteredByTime(activeEvents.filter((e) => getEffectiveDate(e) >= today && e.is_locked && e.monitors.some((m) => m.is_confirmed))));
+
+  const baseFutureOpen = activeEvents.filter((e) => getEffectiveDate(e) >= today && !(e.is_locked && e.monitors.some((m) => m.is_confirmed)));
+  const baseFutureFinalized = activeEvents.filter((e) => getEffectiveDate(e) >= today && e.is_locked && e.monitors.some((m) => m.is_confirmed));
+
+  const futureOpen = applyFilters(getFilteredByTime(
+    myOpenFilter && user
+      ? baseFutureOpen.filter((e) => e.monitors.some((m) => m.user_id === user.id && !m.is_confirmed))
+      : baseFutureOpen
+  ));
+  const futureFinalized = applyFilters(getFilteredByTime(
+    myFinalizedFilter && user
+      ? baseFutureFinalized.filter((e) => e.monitors.some((m) => m.user_id === user.id && m.is_confirmed))
+      : baseFutureFinalized
+  ));
+
+  const calendarEvents =
+    scaleTab === "finalized" ? futureFinalized :
+    scaleTab === "past" ? pastEvents :
+    scaleTab === "trash" ? deletedEvents :
+    futureOpen;
 
   const renderGrouped = (list: EventData[]) => {
     const grouped = groupByDate(list);
@@ -379,7 +407,7 @@ const Index = () => {
                   type="text"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Buscar por nome do monitor..."
+                  placeholder="Buscar"
                   className="w-full rounded-lg border border-input bg-background pl-9 pr-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring placeholder:text-muted-foreground"
                 />
               </div>
@@ -395,16 +423,58 @@ const Index = () => {
               </div>
             </div>
 
-            {/* Time filter */}
+            {/* Personal toggles + view mode */}
             <div className="mb-3 sm:mb-4 flex items-center gap-1.5 sm:gap-2 overflow-x-auto pb-1 -mx-1 px-1">
-              {([["all", "Todos"], ["this_week", "Esta Semana"], ["next_week", "Próx. Semana"], ["this_month", "Mês Atual"]] as [TimeFilter, string][]).map(([val, label]) => (
-                <button key={val} onClick={() => setTimeFilter(val)}
-                  className={`rounded-full px-2.5 sm:px-3 py-1 text-[11px] sm:text-xs font-semibold transition-colors whitespace-nowrap shrink-0 ${
-                    timeFilter === val ? "bg-primary/10 text-primary border border-primary/30" : "text-muted-foreground hover:bg-muted border border-transparent"
-                  }`}>
-                  {label}
+              {scaleTab === "open" && user && (
+                <button
+                  onClick={() => setMyOpenFilter((v) => !v)}
+                  className={`rounded-full px-2.5 sm:px-3 py-1 text-[11px] sm:text-xs font-semibold transition-colors whitespace-nowrap shrink-0 border ${
+                    myOpenFilter ? "bg-primary/10 text-primary border-primary/30" : "text-muted-foreground hover:bg-muted border-transparent"
+                  }`}
+                >
+                  👤 Minhas Inscrições
                 </button>
-              ))}
+              )}
+              {scaleTab === "finalized" && user && (
+                <button
+                  onClick={() => setMyFinalizedFilter((v) => !v)}
+                  className={`rounded-full px-2.5 sm:px-3 py-1 text-[11px] sm:text-xs font-semibold transition-colors whitespace-nowrap shrink-0 border ${
+                    myFinalizedFilter ? "bg-camp/20 text-camp border-camp/30" : "text-muted-foreground hover:bg-muted border-transparent"
+                  }`}
+                >
+                  ✅ Meus Eventos
+                </button>
+              )}
+              {/* View mode toggle — icons only */}
+              <div className="ml-auto flex items-center gap-0.5 rounded-full border border-border bg-muted p-0.5 shrink-0">
+                <button
+                  onClick={() => setViewMode("list")}
+                  title="Lista"
+                  className={`rounded-full p-1.5 transition-colors ${
+                    viewMode === "list" ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  <LayoutList className="h-3.5 w-3.5" />
+                </button>
+                <button
+                  onClick={() => setViewMode("week")}
+                  title="Semana"
+                  className={`rounded-full p-1.5 transition-colors ${
+                    viewMode === "week" ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  <CalendarDays className="h-3.5 w-3.5" />
+                </button>
+                <button
+                  onClick={() => setViewMode("month")}
+                  title="Mês"
+                  className={`rounded-full p-1.5 transition-colors ${
+                    viewMode === "month" ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  <CalendarRange className="h-3.5 w-3.5" />
+                </button>
+              </div>
             </div>
 
             {eventsLoading ? (
@@ -426,6 +496,10 @@ const Index = () => {
                   </div>
                 ))}
               </div>
+            ) : viewMode === "week" ? (
+              <WeekCalendar events={calendarEvents} onEventClick={setCalendarEvent} />
+            ) : viewMode === "month" ? (
+              <MonthCalendar events={calendarEvents} onEventClick={setCalendarEvent} />
             ) : (
               <>
                 {scaleTab === "open" && renderGrouped(futureOpen)}
@@ -458,6 +532,13 @@ const Index = () => {
         )}
       </main>
 
+      {calendarEvent && (
+        <CalendarEventModal
+          event={calendarEvent}
+          onClose={() => setCalendarEvent(null)}
+          onRefresh={() => { fetchEvents(); setCalendarEvent(null); }}
+        />
+      )}
       {showCreateForm && <CreateEventForm onClose={() => setShowCreateForm(false)} onCreated={fetchEvents} />}
       <MessageButton />
     </div>

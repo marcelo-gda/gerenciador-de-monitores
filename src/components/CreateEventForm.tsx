@@ -21,6 +21,7 @@ const CreateEventForm = ({ onClose, onCreated }: CreateEventFormProps) => {
   const [address, setAddress] = useState("");
   const [totalSlots, setTotalSlots] = useState<string>("");
   const [team, setTeam] = useState<number>(1);
+  const [isPaid, setIsPaid] = useState(true);
   const [loading, setLoading] = useState(false);
 
   const typeOptions = [
@@ -47,6 +48,7 @@ const CreateEventForm = ({ onClose, onCreated }: CreateEventFormProps) => {
       address,
       total_slots: totalSlots ? parseInt(totalSlots) : null,
       team,
+      is_paid: isPaid,
       created_by: user?.id,
     }]);
     if (error) {
@@ -147,6 +149,23 @@ const CreateEventForm = ({ onClose, onCreated }: CreateEventFormProps) => {
           <div>
             <label className="mb-1 block text-sm font-semibold">Vagas Totais (opcional)</label>
             <input type="number" value={totalSlots} onChange={(e) => setTotalSlots(e.target.value)} min="1" max="50" className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring" placeholder="Deixe vazio para ilimitado" />
+          </div>
+
+          <div>
+            <button
+              type="button"
+              onClick={() => setIsPaid((v) => !v)}
+              className={`flex w-full items-center justify-between rounded-lg border-2 px-4 py-2.5 text-sm font-semibold transition-colors ${
+                isPaid
+                  ? "border-camp/40 bg-camp/10 text-camp"
+                  : "border-border bg-muted text-muted-foreground"
+              }`}
+            >
+              <span>💰 Evento remunerado</span>
+              <span className={`rounded-full px-2 py-0.5 text-xs ${isPaid ? "bg-camp/20 text-camp" : "bg-muted-foreground/20 text-muted-foreground"}`}>
+                {isPaid ? "Sim" : "Não"}
+              </span>
+            </button>
           </div>
 
           <button type="submit" disabled={loading} className="flex w-full items-center justify-center gap-2 rounded-lg bg-primary py-2.5 font-semibold text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50">

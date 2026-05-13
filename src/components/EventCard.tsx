@@ -45,6 +45,7 @@ interface EventData {
   total_slots: number | null;
   is_locked: boolean;
   is_deleted?: boolean;
+  is_paid?: boolean;
   created_by: string | null;
   team?: number | null;
   monitors: Monitor[];
@@ -88,6 +89,7 @@ const EventCard = ({ event, onRefresh }: EventCardProps) => {
   const [editAddress, setEditAddress] = useState(event.address);
   const [editSlots, setEditSlots] = useState(event.total_slots?.toString() || "");
   const [editTeam, setEditTeam] = useState<number>(event.team || 1);
+  const [editIsPaid, setEditIsPaid] = useState(event.is_paid !== false);
 
   const monitorCount = event.monitors.length;
   const isFull = event.total_slots ? monitorCount >= event.total_slots : false;
@@ -115,6 +117,7 @@ const EventCard = ({ event, onRefresh }: EventCardProps) => {
     setEditAddress(event.address);
     setEditSlots(event.total_slots?.toString() || "");
     setEditTeam(event.team || 1);
+    setEditIsPaid(event.is_paid !== false);
     setEditing(true);
   };
 
@@ -145,6 +148,7 @@ const EventCard = ({ event, onRefresh }: EventCardProps) => {
         address: editAddress.trim(),
         total_slots: newSlots,
         team: editTeam,
+        is_paid: editIsPaid,
       })
       .eq("id", event.id);
 
@@ -277,6 +281,11 @@ const EventCard = ({ event, onRefresh }: EventCardProps) => {
                       <CheckCircle2 className="h-3 w-3" /> ESCALADA
                     </span>
                   )}
+                  {event.is_paid === false && (
+                    <span className="ml-2 inline-flex items-center gap-1 rounded-full bg-secondary/20 px-2 py-0.5 text-xs font-semibold text-secondary">
+                      🤝 Voluntário
+                    </span>
+                  )}
                   {event.is_locked && !isFinalized && <Lock className="ml-2 inline h-4 w-4 text-destructive" />}
                   <ExternalLink className="ml-1 inline h-3 w-3 text-muted-foreground" />
                 </h3>
@@ -366,6 +375,15 @@ const EventCard = ({ event, onRefresh }: EventCardProps) => {
                   {t === 1 ? "1️⃣" : "2️⃣"}
                 </button>
               ))}
+              <button
+                type="button"
+                onClick={() => setEditIsPaid((v) => !v)}
+                className={`ml-2 rounded-full px-2.5 py-0.5 text-xs font-semibold border transition-colors ${
+                  editIsPaid ? "border-camp/40 bg-camp/10 text-camp" : "border-border text-muted-foreground"
+                }`}
+              >
+                {editIsPaid ? "💰 Remunerado" : "🤝 Voluntário"}
+              </button>
             </div>
           ) : (
             <span>

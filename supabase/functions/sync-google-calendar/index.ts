@@ -80,6 +80,25 @@ async function getAccessToken(serviceAccount: {
   return tokenData.access_token;
 }
 
+function shouldImportEvent(title: string): boolean {
+  const t = title.trim().toLowerCase();
+
+  // Whitelist — importar se contiver qualquer uma dessas palavras
+  const whitelist = [
+    "gda", "festa", "gdc", "emo", "obscuria", "obs",
+    "acampamento", "vaquinha"
+  ];
+  if (whitelist.some((word) => t.includes(word))) return true;
+
+  // Padrão: Nome + separador + Número (ex: "Raul - 10", "Mateus - 12")
+  if (/[a-záéíóúâêîôûãõçà-ú]+\s*[-–]?\s*\d+/i.test(title)) return true;
+
+  // Padrão: Nome + separador + Sigla (ex: "Rafa Quintão - STH", "Cacá - EMO")
+  if (/[A-Za-zÀ-ú]+\s*[-–]\s*[A-Z]{2,5}(\s|$)/.test(title)) return true;
+
+  return false;
+}
+
 function parseEventDateTime(gcalEvent: GoogleCalendarEvent) {
   const startStr = gcalEvent.start?.dateTime || gcalEvent.start?.date || "";
   const endStr = gcalEvent.end?.dateTime || gcalEvent.end?.date || "";
@@ -170,33 +189,65 @@ Deno.serve(async (req: Request) => {
     );
     const cancelledEvents = gcalEvents.filter((e) => e.status === "cancelled");
 
+    // ── Remoção: eventos que sumiram do Google devem ser marcados como deletados ──
+    // Considera apenas eventos futuros com google_event_id (nunca toca manuais)
+    const gcalActiveIds = new Set(activeEvents.map((e) => e.id));
+    const today = new Date().toISOString().split("T")[0];
+    const { data: dbGcalEvents } = await supabase
+      .from("events")
+      .select("id, google_event_id")
+      .not("google_event_id", "is", null)
+      .eq("is_deleted", false)
+      .gte("event_date", today);
+
+    let eventsDeleted = 0;
+    for (const dbEvent of dbGcalEvents ?? []) {
+      if (!gcalActiveIds.has(dbEvent.google_event_id)) {
+        await supabase
+          .from("events")
+          .update({ is_deleted: true })
+          .eq("id", dbEvent.id);
+        eventsDeleted++;
+      }
+    }
+
+    // ── Filtro de palavras-chave: importar só eventos relevantes ──
+    const eventsToImport = activeEvents.filter((e) => {
+      const passes = shouldImportEvent(e.summary ?? "");
+      console.log(`[filter] "${e.summary}" → ${passes ? "✅ importado" : "❌ rejeitado"}`);
+      return passes;
+    });
+
     let eventsCreated = 0;
     let eventsUpdated = 0;
 
-    for (const gcalEvent of activeEvents) {
+    for (const gcalEvent of eventsToImport) {
       const title = gcalEvent.summary!;
       const { eventDate, endDate, startTime, endTime } = parseEventDateTime(gcalEvent);
       const address = gcalEvent.location || "A definir";
 
       const { data: existing } = await supabase
         .from("events")
-        .select("id")
+        .select("id, title, event_date, end_date, start_time, end_time, address")
         .eq("google_event_id", gcalEvent.id)
         .maybeSingle();
 
       if (existing) {
-        await supabase
-          .from("events")
-          .update({
-            title,
-            event_date: eventDate,
-            end_date: endDate,
-            start_time: startTime,
-            end_time: endTime,
-            address,
-          })
-          .eq("google_event_id", gcalEvent.id);
-        eventsUpdated++;
+        const changed =
+          existing.title !== title ||
+          existing.event_date !== eventDate ||
+          (existing.end_date ?? null) !== (endDate ?? null) ||
+          existing.start_time !== startTime ||
+          existing.end_time !== endTime ||
+          existing.address !== address;
+
+        if (changed) {
+          await supabase
+            .from("events")
+            .update({ title, event_date: eventDate, end_date: endDate, start_time: startTime, end_time: endTime, address })
+            .eq("google_event_id", gcalEvent.id);
+          eventsUpdated++;
+        }
       } else {
         await supabase.from("events").insert({
           google_event_id: gcalEvent.id,
@@ -234,6 +285,7 @@ Deno.serve(async (req: Request) => {
         success: true,
         events_created: eventsCreated,
         events_updated: eventsUpdated,
+        events_deleted: eventsDeleted,
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
