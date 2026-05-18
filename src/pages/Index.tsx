@@ -335,14 +335,12 @@ const Index = () => {
           >
             <Info className="h-3.5 w-3.5 sm:h-4 sm:w-4" /> Informações
           </button>
-          <button
-            onClick={() => setTab("especiais")}
-            className={`flex items-center gap-1 sm:gap-1.5 rounded-full px-3 sm:px-4 py-1.5 text-xs sm:text-sm font-semibold transition-colors whitespace-nowrap ${
-              tab === "especiais" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted"
-            }`}
+          <Link
+            to="/special-events"
+            className="flex items-center gap-1 sm:gap-1.5 rounded-full px-3 sm:px-4 py-1.5 text-xs sm:text-sm font-semibold transition-colors whitespace-nowrap text-muted-foreground hover:bg-muted"
           >
             ⭐ Eventos Especiais
-          </button>
+          </Link>
           <button
             onClick={() => setTab("funcoes")}
             className={`flex items-center gap-1 sm:gap-1.5 rounded-full px-3 sm:px-4 py-1.5 text-xs sm:text-sm font-semibold transition-colors whitespace-nowrap ${
@@ -531,15 +529,7 @@ const Index = () => {
           <motion.div key="monitores" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
             <MonitoresSection />
           </motion.div>
-        ) : (
-          <motion.div key="especiais" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-            <div className="mx-auto max-w-3xl text-center py-16">
-              <span className="text-5xl mb-4 block">🚧</span>
-              <h2 className="font-display text-xl font-bold text-foreground mb-2">Eventos Especiais</h2>
-              <p className="text-muted-foreground">Em construção</p>
-            </div>
-          </motion.div>
-        )}
+        ) : null}
       </main>
 
       {calendarEvent && (

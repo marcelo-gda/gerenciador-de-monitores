@@ -62,6 +62,9 @@ const AppNavbar = () => {
               </span>
             )}
           </Link>
+          <Link to="/special-events" className={navLink("/special-events")} title="Eventos Especiais">
+            <span className="text-base leading-none">⭐</span>
+          </Link>
           {isAdmin && (
             <Link to="/admin" className={navLink("/admin")} title="Painel de Controle">
               <LayoutDashboard className="h-4 w-4" />

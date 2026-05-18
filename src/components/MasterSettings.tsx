@@ -270,6 +270,17 @@ const MasterSettings = ({ readOnly = false }: { readOnly?: boolean }) => {
     }
   };
 
+  const handleDeleteTeamRole = async (roleId: string, roleName: string, teamName: string) => {
+    if (!confirm(`Remover ${roleName} da ${teamName}?`)) return;
+    const { error } = await supabase.from("team_roles").delete().eq("id", roleId);
+    if (error) {
+      toast.error("Erro ao remover hierarquia da equipe");
+    } else {
+      toast.success(`${roleName} removido da equipe`);
+      fetchTeams();
+    }
+  };
+
   const handleSaveTeam = async (teamId: string) => {
     const tf = teamForms[teamId];
     if (!tf) return;
@@ -531,7 +542,7 @@ const MasterSettings = ({ readOnly = false }: { readOnly?: boolean }) => {
                         key={role.id}
                         className="rounded-md border border-border/60 bg-background p-2 space-y-1.5"
                       >
-                        {/* Row 1: emoji + hierarchy + special role */}
+                        {/* Row 1: emoji + hierarchy + special role + delete */}
                         <div className="flex items-center gap-2">
                           <span
                             className="w-8 shrink-0 text-center text-xl leading-none"
@@ -572,6 +583,13 @@ const MasterSettings = ({ readOnly = false }: { readOnly?: boolean }) => {
                               ))}
                             </SelectContent>
                           </Select>
+                          <button
+                            onClick={() => handleDeleteTeamRole(role.id, role.name, tf.name)}
+                            className="rounded p-1 text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition-colors shrink-0"
+                            title={`Remover ${role.name} da equipe`}
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
                         </div>
                         {/* Row 2: name + rate */}
                         <div className="flex items-center gap-2">

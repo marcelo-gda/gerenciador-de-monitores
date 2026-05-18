@@ -5,6 +5,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import JoinEventDialog from "@/components/JoinEventDialog";
 import EditEventModal from "@/components/EditEventModal";
+import { calcHours, formatCurrency } from "@/utils/payments";
 
 interface Monitor {
   id: string;
@@ -84,6 +85,22 @@ const CalendarEventModal = ({ event, onClose, onRefresh }: CalendarEventModalPro
   const { user, isAdmin, isApproved } = useAuth();
   const [showJoinDialog, setShowJoinDialog] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
+
+  // Linked special event banner
+  const [linkedSpecialEvent, setLinkedSpecialEvent] = useState<{ id: string; title: string } | null | undefined>(undefined);
+
+  useEffect(() => {
+    (supabase as any)
+      .from("special_events")
+      .select("id, title")
+      .eq("event_id", event.id)
+      .limit(1)
+      .then(({ data, error }: { data: { id: string; title: string }[] | null; error: unknown }) => {
+        const found = data?.[0] ?? null;
+        console.log("[CalendarEventModal] special_events link →", { event_id: event.id, found, error });
+        setLinkedSpecialEvent(found);
+      });
+  }, [event.id]);
 
   // Rates data (loaded for paid events)
   const [hierarchies, setHierarchies] = useState<Hierarchy[]>([]);
@@ -311,11 +328,26 @@ const CalendarEventModal = ({ event, onClose, onRefresh }: CalendarEventModalPro
             </div>
           )}
 
-          {/* Remuneração por hora — visível para todos em eventos pagos */}
+          {/* Banner: evento especial vinculado */}
+          {linkedSpecialEvent && (
+            <div className="mt-3 flex items-start gap-2.5 rounded-lg border-2 border-yellow-400/70 bg-yellow-50/70 px-4 py-3 dark:bg-yellow-900/20 dark:border-yellow-500/50">
+              <span className="text-lg leading-none shrink-0">⭐</span>
+              <div className="min-w-0">
+                <p className="text-sm font-semibold text-yellow-800 dark:text-yellow-300">
+                  Este é um Evento Especial
+                </p>
+                <p className="mt-0.5 text-xs text-yellow-700 dark:text-yellow-400">
+                  ℹ️ Acesse a aba Eventos Especiais para ver detalhes e se voluntariar
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* Remuneração — visível para todos em eventos pagos */}
           {event.is_paid !== false && (
             <div className="mt-3">
               <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                💰 Remuneração / hora
+                {isAdmin ? "💰 Remuneração / hora" : "💰 Remuneração total"}
               </p>
               {ratesLoading ? (
                 <div className="flex items-center gap-1.5 text-xs text-muted-foreground py-2">
@@ -327,29 +359,42 @@ const CalendarEventModal = ({ event, onClose, onRefresh }: CalendarEventModalPro
                   <div className="rounded-lg border border-border overflow-hidden">
                     <table className="w-full">
                       <tbody className="divide-y divide-border">
-                        {hierarchies.map((h) => {
-                          const effective = getEffectiveRate(h);
-                          return (
-                            <tr key={h.id}>
+                        {(() => {
+                          const eventHours = calcHours(event.start_time, event.end_time);
+                          return hierarchies.map((h) => {
+                            const effective = getEffectiveRate(h);
+                            const displayValue = effective
+                              ? isAdmin
+                                ? `${formatCurrency(effective.rate)}/h`
+                                : formatCurrency(effective.rate * eventHours)
+                              : "—";
+                            return (
+                              <tr key={h.id}>
+                                <td className="px-3 py-1.5 text-sm font-medium text-foreground">
+                                  {h.emoji} {h.name}
+                                </td>
+                                <td className={`px-3 py-1.5 text-right text-sm font-medium ${effective?.isCustom ? "text-amber-600" : "text-muted-foreground"}`}>
+                                  {displayValue}
+                                </td>
+                              </tr>
+                            );
+                          });
+                        })()}
+                        {(() => {
+                          const eventHours = calcHours(event.start_time, event.end_time);
+                          return extraRates.map(([key, val]) => (
+                            <tr key={key}>
                               <td className="px-3 py-1.5 text-sm font-medium text-foreground">
-                                {h.emoji} {h.name}
+                                {key}
                               </td>
-                              <td className={`px-3 py-1.5 text-right text-sm font-medium ${effective?.isCustom ? "text-amber-600" : "text-muted-foreground"}`}>
-                                {effective ? `R$ ${effective.rate.toFixed(2)}/h` : "—"}
+                              <td className="px-3 py-1.5 text-right text-sm font-medium text-amber-600">
+                                {isAdmin
+                                  ? `${formatCurrency(val)}/h`
+                                  : formatCurrency(val * eventHours)}
                               </td>
                             </tr>
-                          );
-                        })}
-                        {extraRates.map(([key, val]) => (
-                          <tr key={key}>
-                            <td className="px-3 py-1.5 text-sm font-medium text-foreground">
-                              {key}
-                            </td>
-                            <td className="px-3 py-1.5 text-right text-sm font-medium text-amber-600">
-                              R$ {val.toFixed(2)}/h
-                            </td>
-                          </tr>
-                        ))}
+                          ));
+                        })()}
                       </tbody>
                     </table>
                   </div>
