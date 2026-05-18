@@ -187,12 +187,13 @@ const CalendarEventModal = ({ event, onClose, onRefresh }: CalendarEventModalPro
   const isComingSoon = !isPastEvent && diffDays > 30 && !event.force_available;
 
   const monitorCount = event.monitors.length;
-  const isFull = event.total_slots ? monitorCount >= event.total_slots : false;
+  const confirmedCount = event.monitors.filter((m) => m.is_confirmed).length;
+  const isFull = event.total_slots ? confirmedCount >= event.total_slots : false;
   const isUserInEvent = event.monitors.some((m) => m.user_id === user?.id);
   const isFinalized = event.is_locked && event.monitors.some((m) => m.is_confirmed);
 
   const canJoin =
-    isApproved && !event.is_locked && !isFull && !isUserInEvent && !isPastEvent && !isComingSoon;
+    isApproved && !event.is_locked && !isUserInEvent && !isPastEvent && !isComingSoon;
   const canLeave =
     isApproved && !event.is_locked && isUserInEvent && !isPastEvent && !isComingSoon;
 
