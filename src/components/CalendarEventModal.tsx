@@ -82,7 +82,7 @@ const typeBadge: Record<string, string> = {
 };
 
 const CalendarEventModal = ({ event, onClose, onRefresh }: CalendarEventModalProps) => {
-  const { user, isAdmin, isApproved } = useAuth();
+  const { user, isAdmin } = useAuth();
   const [showJoinDialog, setShowJoinDialog] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
 
@@ -97,7 +97,6 @@ const CalendarEventModal = ({ event, onClose, onRefresh }: CalendarEventModalPro
       .limit(1)
       .then(({ data, error }: { data: { id: string; title: string }[] | null; error: unknown }) => {
         const found = data?.[0] ?? null;
-        console.log("[CalendarEventModal] special_events link →", { event_id: event.id, found, error });
         setLinkedSpecialEvent(found);
       });
   }, [event.id]);
@@ -120,26 +119,6 @@ const CalendarEventModal = ({ event, onClose, onRefresh }: CalendarEventModalPro
       const loadedRoles = rolesRes.data ?? [];
       const loadedHier = hierRes.data ?? [];
 
-      console.log("[CalendarEventModal] event.team:", event.team);
-      console.log("[CalendarEventModal] teams:", loadedTeams);
-      console.log("[CalendarEventModal] team_roles:", loadedRoles);
-      console.log("[CalendarEventModal] hierarchies:", loadedHier);
-
-      // Log match attempt for each hierarchy
-      const teamNum = event.team;
-      if (teamNum != null) {
-        const teamObj =
-          loadedTeams.find((t) => t.sort_order === teamNum) ??
-          loadedTeams.find((t) => t.sort_order === teamNum - 1);
-        console.log("[CalendarEventModal] teamObj encontrado:", teamObj);
-        loadedHier.forEach((h) => {
-          const tr = loadedRoles.find(
-            (r) => r.team_id === teamObj?.id && r.hierarchy_id === h.id
-          );
-          console.log(`[CalendarEventModal] ${h.slug} → team_role:`, tr ?? "NÃO ENCONTRADO");
-        });
-      }
-
       setHierarchies(loadedHier);
       setTeamRoles(loadedRoles);
       setTeams(loadedTeams);
@@ -152,7 +131,6 @@ const CalendarEventModal = ({ event, onClose, onRefresh }: CalendarEventModalPro
     if (customRates[h.slug] !== undefined) {
       return { rate: customRates[h.slug], isCustom: true };
     }
-    // Resolve o team: usa event.team se definido, senão o team de menor sort_order como fallback.
     const teamNum = event.team;
     const teamObj = teamNum != null
       ? (teams.find((t) => t.sort_order === teamNum) ??
@@ -187,15 +165,12 @@ const CalendarEventModal = ({ event, onClose, onRefresh }: CalendarEventModalPro
   const isComingSoon = !isPastEvent && diffDays > 30 && !event.force_available;
 
   const monitorCount = event.monitors.length;
-  const confirmedCount = event.monitors.filter((m) => m.is_confirmed).length;
-  const isFull = event.total_slots ? confirmedCount >= event.total_slots : false;
   const isUserInEvent = event.monitors.some((m) => m.user_id === user?.id);
   const isFinalized = event.is_locked && event.monitors.some((m) => m.is_confirmed);
 
-  const canJoin =
-    isApproved && !event.is_locked && !isUserInEvent && !isPastEvent && !isComingSoon;
-  const canLeave =
-    isApproved && !event.is_locked && isUserInEvent && !isPastEvent && !isComingSoon;
+  // total_slots é apenas informativo — não bloqueia inscrições
+  const canJoin = !!user && !event.is_locked && !isUserInEvent && !isPastEvent && !isComingSoon;
+  const canLeave = !!user && !event.is_locked && isUserInEvent && !isPastEvent && !isComingSoon;
 
   const handleLeave = async () => {
     if (!user) return;
@@ -309,14 +284,7 @@ const CalendarEventModal = ({ event, onClose, onRefresh }: CalendarEventModalPro
             <div className="flex items-center gap-2 text-muted-foreground">
               <Users className="h-4 w-4 shrink-0" />
               <span>
-                {monitorCount}
-                {event.total_slots ? ` / ${event.total_slots}` : ""} monitor
-                {monitorCount !== 1 ? "es" : ""}
-                {isFull && (
-                  <span className="ml-2 rounded-full bg-destructive/10 px-2 py-0.5 text-xs text-destructive">
-                    Lotado
-                  </span>
-                )}
+                {monitorCount} monitor{monitorCount !== 1 ? "es" : ""} inscritos{event.total_slots ? ` · ${event.total_slots} vagas` : ""}
               </span>
             </div>
           </div>
@@ -462,8 +430,6 @@ const CalendarEventModal = ({ event, onClose, onRefresh }: CalendarEventModalPro
                   ? "Escala encerrada"
                   : isUserInEvent
                   ? "Você já está inscrito"
-                  : isFull
-                  ? "Vagas esgotadas"
                   : ""}
               </p>
             )}

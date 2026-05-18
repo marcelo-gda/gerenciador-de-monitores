@@ -113,7 +113,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const isAdmin = roles.includes("admin") || roles.includes("master_admin");
   const isMasterAdmin = roles.includes("master_admin");
   const isSpecialUser = roles.includes("special_user");
-  const isApproved = profile?.status === "approved";
+  const isApproved = profile?.status === "approved" || isAdmin;
 
   return (
     <AuthContext.Provider

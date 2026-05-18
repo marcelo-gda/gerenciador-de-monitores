@@ -87,7 +87,7 @@ function getBadgeStyle(title: string, type: string): string {
 }
 
 const EventCard = ({ event, onRefresh }: EventCardProps) => {
-  const { user, isAdmin, isApproved } = useAuth();
+  const { user, isAdmin } = useAuth();
   const [showJoinDialog, setShowJoinDialog] = useState(false);
   const [showFinalize, setShowFinalize] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
@@ -98,7 +98,6 @@ const EventCard = ({ event, onRefresh }: EventCardProps) => {
   });
 
   const monitorCount = event.monitors.length;
-  const isFull = event.total_slots ? monitorCount >= event.total_slots : false;
   const isUserInEvent = event.monitors.some((m) => m.user_id === user?.id);
   const todayLocal = new Date(new Date().getFullYear(), new Date().getMonth(), new Date().getDate());
   const [ey, em, ed] = (event.end_date || event.event_date).split("-").map(Number);
@@ -108,8 +107,8 @@ const EventCard = ({ event, onRefresh }: EventCardProps) => {
   const diffDays = Math.ceil((eventDateLocal.getTime() - todayLocal.getTime()) / (1000 * 60 * 60 * 24));
   const isComingSoon = !isPastEvent && diffDays > 30 && !event.force_available;
 
-  const canJoin = isApproved && !event.is_locked && !isFull && !isUserInEvent && !isPastEvent && !isComingSoon;
-  const canLeave = isApproved && !event.is_locked && isUserInEvent && !isPastEvent && !isComingSoon;
+  const canJoin = !!user && !event.is_locked && !isUserInEvent && !isPastEvent && !isComingSoon;
+  const canLeave = !!user && !event.is_locked && isUserInEvent && !isPastEvent && !isComingSoon;
   const hasConfirmed = event.monitors.some((m) => m.is_confirmed);
   const isFinalized = event.is_locked && hasConfirmed;
 
@@ -257,12 +256,9 @@ const EventCard = ({ event, onRefresh }: EventCardProps) => {
         <div className="mb-2 flex items-center gap-1.5 text-sm font-semibold text-foreground flex-wrap">
           <Users className="h-4 w-4" />
           <span>
-            Monitores: {monitorCount}{event.total_slots ? ` / ${event.total_slots}` : ""}
+            Monitores: {monitorCount}
             {event.team && <span className="ml-2 text-muted-foreground">• Equipe {event.team === 1 ? "1️⃣" : "2️⃣"}</span>}
           </span>
-          {isFull && (
-            <span className="ml-2 rounded-full bg-destructive/10 px-2 py-0.5 text-xs text-destructive">Lotado</span>
-          )}
         </div>
 
         {/* Monitors */}
