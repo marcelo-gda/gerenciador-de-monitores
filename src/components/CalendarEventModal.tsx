@@ -1,9 +1,10 @@
-import { useState } from "react";
-import { X, Clock, MapPin, Users, CheckCircle2 } from "lucide-react";
+import { useState, useEffect } from "react";
+import { X, Clock, MapPin, Users, CheckCircle2, Pencil } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import JoinEventDialog from "@/components/JoinEventDialog";
+import EditEventModal from "@/components/EditEventModal";
 
 interface Monitor {
   id: string;
@@ -27,8 +28,11 @@ interface EventData {
   total_slots: number | null;
   is_locked: boolean;
   is_paid?: boolean;
+  force_available?: boolean;
   created_by: string | null;
   team?: number | null;
+  custom_rates?: Record<string, number> | null;
+  observations?: string | null;
   monitors: Monitor[];
 }
 
@@ -36,6 +40,25 @@ interface CalendarEventModalProps {
   event: EventData;
   onClose: () => void;
   onRefresh: () => void;
+}
+
+interface Hierarchy {
+  id: string;
+  slug: string;
+  name: string;
+  emoji: string;
+  sort_order: number;
+}
+
+interface TeamRole {
+  team_id: string;
+  hierarchy_id: string;
+  hourly_rate: number;
+}
+
+interface Team {
+  id: string;
+  sort_order: number;
 }
 
 const levelLabels: Record<string, string> = {
@@ -58,8 +81,79 @@ const typeBadge: Record<string, string> = {
 };
 
 const CalendarEventModal = ({ event, onClose, onRefresh }: CalendarEventModalProps) => {
-  const { user, isApproved } = useAuth();
+  const { user, isAdmin, isApproved } = useAuth();
   const [showJoinDialog, setShowJoinDialog] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
+
+  // Rates data (loaded for paid events)
+  const [hierarchies, setHierarchies] = useState<Hierarchy[]>([]);
+  const [teamRoles, setTeamRoles] = useState<TeamRole[]>([]);
+  const [teams, setTeams] = useState<Team[]>([]);
+  const [ratesLoading, setRatesLoading] = useState(false);
+
+  useEffect(() => {
+    if (event.is_paid === false) return;
+    setRatesLoading(true);
+    Promise.all([
+      supabase.from("hierarchies").select("id, slug, name, emoji, sort_order").order("sort_order"),
+      supabase.from("team_roles").select("team_id, hierarchy_id, hourly_rate"),
+      supabase.from("teams").select("id, sort_order"),
+    ]).then(([hierRes, rolesRes, teamsRes]) => {
+      const loadedTeams = teamsRes.data ?? [];
+      const loadedRoles = rolesRes.data ?? [];
+      const loadedHier = hierRes.data ?? [];
+
+      console.log("[CalendarEventModal] event.team:", event.team);
+      console.log("[CalendarEventModal] teams:", loadedTeams);
+      console.log("[CalendarEventModal] team_roles:", loadedRoles);
+      console.log("[CalendarEventModal] hierarchies:", loadedHier);
+
+      // Log match attempt for each hierarchy
+      const teamNum = event.team;
+      if (teamNum != null) {
+        const teamObj =
+          loadedTeams.find((t) => t.sort_order === teamNum) ??
+          loadedTeams.find((t) => t.sort_order === teamNum - 1);
+        console.log("[CalendarEventModal] teamObj encontrado:", teamObj);
+        loadedHier.forEach((h) => {
+          const tr = loadedRoles.find(
+            (r) => r.team_id === teamObj?.id && r.hierarchy_id === h.id
+          );
+          console.log(`[CalendarEventModal] ${h.slug} → team_role:`, tr ?? "NÃO ENCONTRADO");
+        });
+      }
+
+      setHierarchies(loadedHier);
+      setTeamRoles(loadedRoles);
+      setTeams(loadedTeams);
+      setRatesLoading(false);
+    });
+  }, [event.id, event.is_paid]);
+
+  const getEffectiveRate = (h: Hierarchy): { rate: number; isCustom: boolean } | null => {
+    const customRates = event.custom_rates ?? {};
+    if (customRates[h.slug] !== undefined) {
+      return { rate: customRates[h.slug], isCustom: true };
+    }
+    // Resolve o team: usa event.team se definido, senão o team de menor sort_order como fallback.
+    const teamNum = event.team;
+    const teamObj = teamNum != null
+      ? (teams.find((t) => t.sort_order === teamNum) ??
+         teams.find((t) => t.sort_order === teamNum - 1))
+      : teams.reduce<Team | null>(
+          (min, t) => (min === null || t.sort_order < min.sort_order ? t : min),
+          null
+        );
+    if (!teamObj) return null;
+    const tr = teamRoles.find((r) => r.team_id === teamObj.id && r.hierarchy_id === h.id);
+    if (!tr) return null;
+    return { rate: tr.hourly_rate, isCustom: false };
+  };
+
+  // Extra entries in custom_rates that don't correspond to any standard hierarchy slug
+  const extraRates = Object.entries(event.custom_rates ?? {}).filter(
+    ([key]) => !hierarchies.some((h) => h.slug === key)
+  );
 
   const todayLocal = new Date(
     new Date().getFullYear(),
@@ -73,7 +167,7 @@ const CalendarEventModal = ({ event, onClose, onRefresh }: CalendarEventModalPro
   const diffDays = Math.ceil(
     (eventDateLocal.getTime() - todayLocal.getTime()) / (1000 * 60 * 60 * 24)
   );
-  const isComingSoon = !isPastEvent && diffDays > 30;
+  const isComingSoon = !isPastEvent && diffDays > 30 && !event.force_available;
 
   const monitorCount = event.monitors.length;
   const isFull = event.total_slots ? monitorCount >= event.total_slots : false;
@@ -110,6 +204,9 @@ const CalendarEventModal = ({ event, onClose, onRefresh }: CalendarEventModalPro
 
   const confirmedMonitors = event.monitors.filter((m) => m.is_confirmed);
 
+  const hasAnyCustomRate =
+    hierarchies.some((h) => getEffectiveRate(h)?.isCustom) || extraRates.length > 0;
+
   return (
     <>
       <div
@@ -122,7 +219,7 @@ const CalendarEventModal = ({ event, onClose, onRefresh }: CalendarEventModalPro
         >
           {/* Header */}
           <div className="mb-4 flex items-start justify-between gap-3">
-            <div className="min-w-0">
+            <div className="min-w-0 flex-1">
               <h2 className="font-display text-lg font-bold text-card-foreground leading-tight">
                 {event.emoji} {event.title}
               </h2>
@@ -151,12 +248,23 @@ const CalendarEventModal = ({ event, onClose, onRefresh }: CalendarEventModalPro
                 )}
               </div>
             </div>
-            <button
-              onClick={onClose}
-              className="shrink-0 rounded-lg p-1.5 text-muted-foreground hover:bg-muted transition-colors"
-            >
-              <X className="h-5 w-5" />
-            </button>
+            <div className="flex items-center gap-1 shrink-0">
+              {isAdmin && (
+                <button
+                  onClick={() => setShowEditModal(true)}
+                  className="rounded-lg p-1.5 text-muted-foreground hover:bg-muted transition-colors"
+                  title="Editar evento"
+                >
+                  <Pencil className="h-4 w-4" />
+                </button>
+              )}
+              <button
+                onClick={onClose}
+                className="rounded-lg p-1.5 text-muted-foreground hover:bg-muted transition-colors"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
           </div>
 
           {/* Details */}
@@ -194,6 +302,67 @@ const CalendarEventModal = ({ event, onClose, onRefresh }: CalendarEventModalPro
               </span>
             </div>
           </div>
+
+          {/* Observações */}
+          {event.observations && (
+            <div className="mt-3 rounded-md bg-muted/60 border border-border/50 px-3 py-2.5 text-sm">
+              <p className="text-xs font-semibold text-muted-foreground mb-1">📝 Observações</p>
+              <p className="text-foreground whitespace-pre-wrap">{event.observations}</p>
+            </div>
+          )}
+
+          {/* Remuneração por hora — visível para todos em eventos pagos */}
+          {event.is_paid !== false && (
+            <div className="mt-3">
+              <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                💰 Remuneração / hora
+              </p>
+              {ratesLoading ? (
+                <div className="flex items-center gap-1.5 text-xs text-muted-foreground py-2">
+                  <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-muted border-t-muted-foreground" />
+                  Carregando...
+                </div>
+              ) : hierarchies.length > 0 ? (
+                <>
+                  <div className="rounded-lg border border-border overflow-hidden">
+                    <table className="w-full">
+                      <tbody className="divide-y divide-border">
+                        {hierarchies.map((h) => {
+                          const effective = getEffectiveRate(h);
+                          return (
+                            <tr key={h.id}>
+                              <td className="px-3 py-1.5 text-sm font-medium text-foreground">
+                                {h.emoji} {h.name}
+                              </td>
+                              <td className={`px-3 py-1.5 text-right text-sm font-medium ${effective?.isCustom ? "text-amber-600" : "text-muted-foreground"}`}>
+                                {effective ? `R$ ${effective.rate.toFixed(2)}/h` : "—"}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                        {extraRates.map(([key, val]) => (
+                          <tr key={key}>
+                            <td className="px-3 py-1.5 text-sm font-medium text-foreground">
+                              {key}
+                            </td>
+                            <td className="px-3 py-1.5 text-right text-sm font-medium text-amber-600">
+                              R$ {val.toFixed(2)}/h
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  {hasAnyCustomRate && (
+                    <p className="mt-1.5 text-xs text-amber-600 flex items-center gap-1">
+                      <span className="inline-block w-2 h-2 rounded-full bg-amber-500 shrink-0" />
+                      Valores específicos para este evento
+                    </p>
+                  )}
+                </>
+              ) : null}
+            </div>
+          )}
 
           {/* Monitors */}
           {event.monitors.length > 0 && (
@@ -242,7 +411,7 @@ const CalendarEventModal = ({ event, onClose, onRefresh }: CalendarEventModalPro
                 {isPastEvent
                   ? "Evento encerrado"
                   : isComingSoon
-                  ? `⏳ Inscrições abrem em ${diffDays - 30} dia${diffDays - 30 !== 1 ? "s" : ""}`
+                  ? `🕐 Inscrições abrem em ${diffDays - 30} dia${diffDays - 30 !== 1 ? "s" : ""}`
                   : event.is_locked
                   ? "Escala encerrada"
                   : isUserInEvent
@@ -262,9 +431,15 @@ const CalendarEventModal = ({ event, onClose, onRefresh }: CalendarEventModalPro
           eventTitle={event.title}
           eventEmoji={event.emoji}
           onClose={() => setShowJoinDialog(false)}
-          onJoined={() => {
-            onRefresh();
-          }}
+          onJoined={onRefresh}
+        />
+      )}
+
+      {showEditModal && (
+        <EditEventModal
+          event={event}
+          onClose={() => setShowEditModal(false)}
+          onSaved={onRefresh}
         />
       )}
     </>

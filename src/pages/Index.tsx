@@ -43,8 +43,12 @@ interface EventData {
   total_slots: number | null;
   is_locked: boolean;
   is_deleted?: boolean;
+  is_paid?: boolean;
+  force_available?: boolean;
   created_by: string | null;
   team?: number | null;
+  custom_rates?: Record<string, number> | null;
+  observations?: string | null;
   monitors: Monitor[];
 }
 

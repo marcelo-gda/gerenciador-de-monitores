@@ -66,7 +66,7 @@ async function buildSummaries(filterUserId?: string): Promise<MonitorSummary[]> 
   const [eventsRes, hierarchiesRes, teamsRes, teamRolesRes] = await Promise.all([
     supabase
       .from("events")
-      .select("id, title, emoji, event_date, start_time, end_time, team")
+      .select("id, title, emoji, event_date, start_time, end_time, team, custom_rates")
       .lt("event_date", today)
       .eq("is_deleted", false)
       .eq("is_paid", true),
@@ -132,7 +132,10 @@ async function buildSummaries(filterUserId?: string): Promise<MonitorSummary[]> 
 
     const hierarchy = em.level ? hierarchiesBySlug[em.level] : null;
     let hourlyRate = 0;
-    if (hierarchy && event.team != null) {
+    const eventCustomRates = (event.custom_rates as Record<string, number> | null) ?? {};
+    if (em.level && eventCustomRates[em.level] !== undefined) {
+      hourlyRate = eventCustomRates[em.level];
+    } else if (hierarchy && event.team != null) {
       const teamNum = event.team as number;
       const team =
         teams.find((t) => t.sort_order === teamNum - 1) ??

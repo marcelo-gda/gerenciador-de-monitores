@@ -1,13 +1,14 @@
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { MapPin, Clock, Plus, X, Users, Lock, Copy, Trash2, CheckCircle2, ClipboardCheck, ExternalLink, Pencil, Save, Loader2, RotateCcw } from "lucide-react";
+import { MapPin, Clock, Plus, X, Users, Lock, Copy, Trash2, CheckCircle2, ClipboardCheck, Pencil, RotateCcw } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
-import { Link } from "react-router-dom";
 import FinalizeScaleDialog from "@/components/FinalizeScaleDialog";
 import JoinEventDialog from "@/components/JoinEventDialog";
 import RejectMonitorDialog from "@/components/RejectMonitorDialog";
+import EditEventModal from "@/components/EditEventModal";
+import CalendarEventModal from "@/components/CalendarEventModal";
 
 const levelLabels: Record<string, string> = {
   mestre: "Mestre",
@@ -46,8 +47,11 @@ interface EventData {
   is_locked: boolean;
   is_deleted?: boolean;
   is_paid?: boolean;
+  force_available?: boolean;
   created_by: string | null;
   team?: number | null;
+  custom_rates?: Record<string, number> | null;
+  observations?: string | null;
   monitors: Monitor[];
 }
 
@@ -83,27 +87,15 @@ function getBadgeStyle(title: string, type: string): string {
 }
 
 const EventCard = ({ event, onRefresh }: EventCardProps) => {
-  const { user, isAdmin, isSpecialUser, isApproved } = useAuth();
-  const [joining, setJoining] = useState(false);
+  const { user, isAdmin, isApproved } = useAuth();
   const [showJoinDialog, setShowJoinDialog] = useState(false);
   const [showFinalize, setShowFinalize] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [showDetailModal, setShowDetailModal] = useState(false);
   const [rejectingMonitor, setRejectingMonitor] = useState<{ userId: string; name: string } | null>(null);
   const [preSelected, setPreSelected] = useState<Set<string>>(() => {
     return new Set(event.monitors.filter((m) => m.is_confirmed).map((m) => m.user_id));
   });
-
-  // Inline editing state
-  const [editing, setEditing] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [editTitle, setEditTitle] = useState(event.title);
-  const [editDate, setEditDate] = useState(event.event_date);
-  const [editEndDate, setEditEndDate] = useState(event.end_date || "");
-  const [editStart, setEditStart] = useState(event.start_time);
-  const [editEnd, setEditEnd] = useState(event.end_time);
-  const [editAddress, setEditAddress] = useState(event.address);
-  const [editSlots, setEditSlots] = useState(event.total_slots?.toString() || "");
-  const [editTeam, setEditTeam] = useState<number>(event.team || 1);
-  const [editIsPaid, setEditIsPaid] = useState(event.is_paid !== false);
 
   const monitorCount = event.monitors.length;
   const isFull = event.total_slots ? monitorCount >= event.total_slots : false;
@@ -111,70 +103,15 @@ const EventCard = ({ event, onRefresh }: EventCardProps) => {
   const todayLocal = new Date(new Date().getFullYear(), new Date().getMonth(), new Date().getDate());
   const [ey, em, ed] = (event.end_date || event.event_date).split("-").map(Number);
   const isPastEvent = new Date(ey, em - 1, ed) < todayLocal;
-  // 30-day window: events more than 30 days away are "Em Breve"
   const [eventYear, eventMonth, eventDay] = event.event_date.split("-").map(Number);
   const eventDateLocal = new Date(eventYear, eventMonth - 1, eventDay);
   const diffDays = Math.ceil((eventDateLocal.getTime() - todayLocal.getTime()) / (1000 * 60 * 60 * 24));
-  const isComingSoon = !isPastEvent && diffDays > 30;
+  const isComingSoon = !isPastEvent && diffDays > 30 && !event.force_available;
 
   const canJoin = isApproved && !event.is_locked && !isFull && !isUserInEvent && !isPastEvent && !isComingSoon;
   const canLeave = isApproved && !event.is_locked && isUserInEvent && !isPastEvent && !isComingSoon;
   const hasConfirmed = event.monitors.some((m) => m.is_confirmed);
   const isFinalized = event.is_locked && hasConfirmed;
-
-  const startEditing = () => {
-    setEditTitle(event.title);
-    setEditDate(event.event_date);
-    setEditEndDate(event.end_date || "");
-    setEditStart(event.start_time);
-    setEditEnd(event.end_time);
-    setEditAddress(event.address);
-    setEditSlots(event.total_slots?.toString() || "");
-    setEditTeam(event.team || 1);
-    setEditIsPaid(event.is_paid !== false);
-    setEditing(true);
-  };
-
-  const cancelEditing = () => {
-    setEditing(false);
-  };
-
-  const handleSaveEdit = async () => {
-    if (!editTitle.trim() || !editDate || !editStart.trim() || !editEnd.trim() || !editAddress.trim()) {
-      toast.error("Preencha todos os campos obrigatórios");
-      return;
-    }
-
-    const newSlots = editSlots ? parseInt(editSlots) : null;
-    if (newSlots !== null && newSlots < monitorCount) {
-      toast.warning(`Atenção: O novo limite de vagas (${newSlots}) é menor que a quantidade de inscritos atual (${monitorCount})`);
-    }
-
-    setSaving(true);
-    const { error } = await supabase
-      .from("events")
-      .update({
-        title: editTitle.trim(),
-        event_date: editDate,
-        end_date: event.type === "camp" && editEndDate ? editEndDate : null,
-        start_time: editStart.trim(),
-        end_time: editEnd.trim(),
-        address: editAddress.trim(),
-        total_slots: newSlots,
-        team: editTeam,
-        is_paid: editIsPaid,
-      })
-      .eq("id", event.id);
-
-    if (error) {
-      toast.error("Erro ao salvar alterações");
-    } else {
-      toast.success("Evento atualizado!");
-      setEditing(false);
-      onRefresh();
-    }
-    setSaving(false);
-  };
 
   const togglePreSelect = async (userId: string) => {
     const next = new Set(preSelected);
@@ -196,12 +133,6 @@ const EventCard = ({ event, onRefresh }: EventCardProps) => {
     else { toast.success("Você saiu da escala"); onRefresh(); }
   };
 
-  const handleRemoveMonitor = async (monitorUserId: string) => {
-    const { error } = await supabase.from("event_monitors").delete().eq("event_id", event.id).eq("user_id", monitorUserId);
-    if (error) toast.error("Erro ao remover monitor");
-    else { toast.success("Monitor removido"); onRefresh(); }
-  };
-
   const handleToggleLock = async () => {
     const { error } = await supabase.from("events").update({ is_locked: !event.is_locked }).eq("id", event.id);
     if (error) toast.error("Erro ao alterar status");
@@ -210,21 +141,13 @@ const EventCard = ({ event, onRefresh }: EventCardProps) => {
 
   const handleSoftDelete = async () => {
     if (!confirm("Mover este evento para a lixeira?")) return;
-    const { data, error } = await supabase
-      .from("events")
-      .update({ is_deleted: true })
-      .eq("id", event.id)
-      .select("id");
+    const { data, error } = await supabase.from("events").update({ is_deleted: true }).eq("id", event.id).select("id");
     if (error || !data?.length) toast.error("Erro ao arquivar evento");
     else { toast.success("Evento movido para a lixeira"); onRefresh(); }
   };
 
   const handleRestore = async () => {
-    const { data, error } = await supabase
-      .from("events")
-      .update({ is_deleted: false })
-      .eq("id", event.id)
-      .select("id");
+    const { data, error } = await supabase.from("events").update({ is_deleted: false }).eq("id", event.id).select("id");
     if (error || !data?.length) toast.error("Erro ao restaurar evento");
     else { toast.success("Evento restaurado!"); onRefresh(); }
   };
@@ -251,8 +174,6 @@ const EventCard = ({ event, onRefresh }: EventCardProps) => {
 
   const emptySlots = event.total_slots ? Math.max(0, event.total_slots - monitorCount) : 0;
 
-  const inputClass = "rounded-md border border-input bg-background px-2 py-1 text-sm outline-none focus:ring-2 focus:ring-ring transition-colors";
-
   return (
     <>
       <motion.div
@@ -261,173 +182,88 @@ const EventCard = ({ event, onRefresh }: EventCardProps) => {
         transition={{ duration: 0.3 }}
         className={`relative rounded-lg border-2 p-3 sm:p-5 ${getCardStyle(event.title, event.type)} transition-shadow hover:shadow-md ${
           isPastEvent ? "opacity-50" : ""
-        } ${isFinalized ? "ring-2 ring-camp/40" : event.is_locked ? "ring-2 ring-destructive/30" : ""} ${saving ? "pointer-events-none" : ""}`}
+        } ${isFinalized ? "ring-2 ring-camp/40" : event.is_locked ? "ring-2 ring-destructive/30" : ""}`}
       >
-        {/* Saving overlay */}
-        {saving && (
-          <div className="absolute inset-0 z-10 flex items-center justify-center rounded-lg bg-background/60 backdrop-blur-sm">
-            <Loader2 className="h-6 w-6 animate-spin text-primary" />
-          </div>
-        )}
-
         {/* Header */}
         <div className="mb-3 flex items-start justify-between gap-2">
           <div className="min-w-0 flex-1">
-            {editing ? (
-              <input
-                value={editTitle}
-                onChange={(e) => setEditTitle(e.target.value)}
-                className={`${inputClass} w-full font-display text-lg font-bold`}
-                placeholder="Nome da festa"
-              />
-            ) : (
-              <Link to={`/event/${event.id}`} className="hover:underline">
-                <h3 className="font-display text-base sm:text-lg font-bold leading-tight text-foreground md:text-xl">
-                  <span className="mr-1">{event.emoji}</span>
-                  {event.title}
-                  {isComingSoon && (
-                    <span className="ml-2 inline-flex items-center gap-1 rounded-full bg-secondary/20 px-2 py-0.5 text-xs font-semibold text-secondary">
-                      ⏳ Em Breve
-                    </span>
-                  )}
-                  {isFinalized && (
-                    <span className="ml-2 inline-flex items-center gap-1 rounded-full bg-camp/20 px-2 py-0.5 text-xs font-semibold text-camp">
-                      <CheckCircle2 className="h-3 w-3" /> ESCALADA
-                    </span>
-                  )}
-                  {event.is_paid === false && (
-                    <span className="ml-2 inline-flex items-center gap-1 rounded-full bg-secondary/20 px-2 py-0.5 text-xs font-semibold text-secondary">
-                      🤝 Voluntário
-                    </span>
-                  )}
-                  {event.is_locked && !isFinalized && <Lock className="ml-2 inline h-4 w-4 text-destructive" />}
-                  <ExternalLink className="ml-1 inline h-3 w-3 text-muted-foreground" />
-                </h3>
-              </Link>
-            )}
+            <button
+              onClick={() => setShowDetailModal(true)}
+              className="text-left w-full hover:underline"
+            >
+              <h3 className="font-display text-base sm:text-lg font-bold leading-tight text-foreground md:text-xl">
+                <span className="mr-1">{event.emoji}</span>
+                {event.title}
+                {isComingSoon && (
+                  <span className="ml-2 inline-flex items-center gap-1 rounded-full bg-secondary/20 px-2 py-0.5 text-xs font-semibold text-secondary">
+                    🕐 Em breve
+                  </span>
+                )}
+                {event.force_available && diffDays > 30 && (
+                  <span className="ml-2 inline-flex items-center gap-1 rounded-full bg-primary/20 px-2 py-0.5 text-xs font-semibold text-primary">
+                    🔓 Inscrições abertas
+                  </span>
+                )}
+                {isFinalized && (
+                  <span className="ml-2 inline-flex items-center gap-1 rounded-full bg-camp/20 px-2 py-0.5 text-xs font-semibold text-camp">
+                    <CheckCircle2 className="h-3 w-3" /> ESCALADA
+                  </span>
+                )}
+                {event.is_paid === false && (
+                  <span className="ml-2 inline-flex items-center gap-1 rounded-full bg-secondary/20 px-2 py-0.5 text-xs font-semibold text-secondary">
+                    🤝 Voluntário
+                  </span>
+                )}
+                {event.is_locked && !isFinalized && <Lock className="ml-2 inline h-4 w-4 text-destructive" />}
+              </h3>
+            </button>
           </div>
 
-          {/* Edit button / Date badge */}
+          {/* Edit button + Date badge */}
           <div className="flex items-center gap-1.5 shrink-0">
-            {isAdmin && !editing && (
+            {isAdmin && (
               <button
-                onClick={startEditing}
+                onClick={() => setShowEditModal(true)}
                 className="rounded-lg p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
                 title="Editar evento"
               >
                 <Pencil className="h-3.5 w-3.5" />
               </button>
             )}
-            {!editing && (
-              <span className={`rounded-full px-3 py-1 font-display text-xs font-semibold ${getBadgeStyle(event.title, event.type)}`}>
-                {new Date(event.event_date + "T12:00:00").toLocaleDateString("pt-BR", { day: "numeric", month: "numeric" })}
-                {event.end_date && event.end_date !== event.event_date && (
-                  <> — {new Date(event.end_date + "T12:00:00").toLocaleDateString("pt-BR", { day: "numeric", month: "numeric" })}</>
-                )}
-              </span>
-            )}
+            <span className={`rounded-full px-3 py-1 font-display text-xs font-semibold ${getBadgeStyle(event.title, event.type)}`}>
+              {new Date(event.event_date + "T12:00:00").toLocaleDateString("pt-BR", { day: "numeric", month: "numeric" })}
+              {event.end_date && event.end_date !== event.event_date && (
+                <> — {new Date(event.end_date + "T12:00:00").toLocaleDateString("pt-BR", { day: "numeric", month: "numeric" })}</>
+              )}
+            </span>
           </div>
         </div>
 
         {/* Meta */}
         <div className="mb-3 flex flex-wrap gap-3 text-sm text-muted-foreground">
-          {editing ? (
-            <div className="flex flex-wrap gap-2 w-full">
-              <div className="flex items-center gap-1.5">
-                <Clock className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                <input type="date" value={editDate} onChange={(e) => setEditDate(e.target.value)} className={`${inputClass} w-32`} />
-              </div>
-              {event.type === "camp" && (
-                <div className="flex items-center gap-1.5">
-                  <span className="text-xs text-muted-foreground">até</span>
-                  <input type="date" value={editEndDate} onChange={(e) => setEditEndDate(e.target.value)} min={editDate} className={`${inputClass} w-32`} />
-                </div>
-              )}
-              <div className="flex items-center gap-1">
-                <input value={editStart} onChange={(e) => setEditStart(e.target.value)} className={`${inputClass} w-16 text-center`} placeholder="14h" />
-                <span className="text-muted-foreground">|</span>
-                <input value={editEnd} onChange={(e) => setEditEnd(e.target.value)} className={`${inputClass} w-16 text-center`} placeholder="18h" />
-              </div>
-              <div className="flex items-center gap-1.5 w-full">
-                <MapPin className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                <input value={editAddress} onChange={(e) => setEditAddress(e.target.value)} className={`${inputClass} flex-1`} placeholder="Endereço" />
-              </div>
-            </div>
-          ) : (
-            <>
-              <span className="flex items-center gap-1"><Clock className="h-3.5 w-3.5" />{event.start_time} | {event.end_time}</span>
-              <span className="flex items-center gap-1"><MapPin className="h-3.5 w-3.5" />{event.address}</span>
-            </>
-          )}
+          <span className="flex items-center gap-1"><Clock className="h-3.5 w-3.5" />{event.start_time} | {event.end_time}</span>
+          <span className="flex items-center gap-1"><MapPin className="h-3.5 w-3.5" />{event.address}</span>
         </div>
+
+        {/* Observações (visível para todos) */}
+        {event.observations && (
+          <div className="mb-3 rounded-md bg-muted/60 px-3 py-2 text-xs text-muted-foreground border border-border/50">
+            <span className="font-semibold text-foreground">📝 Obs: </span>
+            {event.observations}
+          </div>
+        )}
 
         {/* Monitor Count & Team */}
         <div className="mb-2 flex items-center gap-1.5 text-sm font-semibold text-foreground flex-wrap">
           <Users className="h-4 w-4" />
-          {editing ? (
-            <div className="flex items-center gap-1.5 flex-wrap">
-              <span>Monitores: {monitorCount} /</span>
-              <input
-                value={editSlots}
-                onChange={(e) => setEditSlots(e.target.value)}
-                type="number"
-                min="1"
-                max="50"
-                className={`${inputClass} w-14 text-center`}
-                placeholder="∞"
-              />
-              <span className="ml-2 text-muted-foreground">Equipe:</span>
-              {[1, 2].map((t) => (
-                <button
-                  key={t}
-                  type="button"
-                  onClick={() => setEditTeam(t)}
-                  className={`rounded-full px-2.5 py-0.5 text-xs font-semibold border transition-colors ${
-                    editTeam === t ? "border-primary bg-primary/10 text-primary" : "border-border text-muted-foreground"
-                  }`}
-                >
-                  {t === 1 ? "1️⃣" : "2️⃣"}
-                </button>
-              ))}
-              <button
-                type="button"
-                onClick={() => setEditIsPaid((v) => !v)}
-                className={`ml-2 rounded-full px-2.5 py-0.5 text-xs font-semibold border transition-colors ${
-                  editIsPaid ? "border-camp/40 bg-camp/10 text-camp" : "border-border text-muted-foreground"
-                }`}
-              >
-                {editIsPaid ? "💰 Remunerado" : "🤝 Voluntário"}
-              </button>
-            </div>
-          ) : (
-            <span>
-              Monitores: {monitorCount}{event.total_slots ? ` / ${event.total_slots}` : ""}
-              {event.team && <span className="ml-2 text-muted-foreground">• Equipe {event.team === 1 ? "1️⃣" : "2️⃣"}</span>}
-            </span>
-          )}
-          {!editing && isFull && (
+          <span>
+            Monitores: {monitorCount}{event.total_slots ? ` / ${event.total_slots}` : ""}
+            {event.team && <span className="ml-2 text-muted-foreground">• Equipe {event.team === 1 ? "1️⃣" : "2️⃣"}</span>}
+          </span>
+          {isFull && (
             <span className="ml-2 rounded-full bg-destructive/10 px-2 py-0.5 text-xs text-destructive">Lotado</span>
           )}
         </div>
-
-        {/* Inline edit actions */}
-        {editing && (
-          <div className="mb-3 flex gap-2">
-            <button
-              onClick={handleSaveEdit}
-              disabled={saving}
-              className="flex items-center gap-1.5 rounded-lg bg-camp px-4 py-1.5 text-sm font-semibold text-primary-foreground hover:opacity-90 disabled:opacity-50"
-            >
-              <Save className="h-3.5 w-3.5" /> Salvar
-            </button>
-            <button
-              onClick={cancelEditing}
-              className="flex items-center gap-1.5 rounded-lg border border-border px-4 py-1.5 text-sm font-semibold text-muted-foreground hover:bg-muted"
-            >
-              <X className="h-3.5 w-3.5" /> Cancelar
-            </button>
-          </div>
-        )}
 
         {/* Monitors */}
         <div className="mb-3 flex flex-wrap gap-1.5">
@@ -506,66 +342,80 @@ const EventCard = ({ event, onRefresh }: EventCardProps) => {
         </div>
 
         {/* Actions */}
-        {!editing && (
-          <div className="flex flex-wrap gap-2">
-            {isComingSoon && !isPastEvent && (
-              <button disabled
-                className="flex items-center gap-1.5 rounded-lg border-2 border-dashed border-muted-foreground/30 px-4 py-2 text-sm font-semibold text-muted-foreground cursor-not-allowed opacity-60">
-                ⏳ Inscrições abrem em {diffDays - 30} dia{diffDays - 30 !== 1 ? "s" : ""}
-              </button>
-            )}
-            {canJoin && (
-              <button onClick={handleJoin}
-                className="flex items-center gap-1.5 rounded-lg border-2 border-dashed border-primary/40 px-4 py-2 text-sm font-semibold text-primary transition-colors hover:border-primary hover:bg-primary/5">
-                <Plus className="h-4 w-4" />Entrar na escala
-              </button>
-            )}
-            {canLeave && (
-              <button onClick={handleLeave}
-                className="flex items-center gap-1.5 rounded-lg border border-destructive/30 px-4 py-2 text-sm font-semibold text-destructive transition-colors hover:bg-destructive/5">
-                <X className="h-4 w-4" />Sair da escala
-              </button>
-            )}
-            {isAdmin && (
-              <div className="flex gap-1.5 ml-auto">
-                {event.is_deleted ? (
-                  <>
-                    <button onClick={handleRestore}
-                      className="rounded-lg bg-camp/20 px-3 py-2 text-xs font-semibold text-camp hover:bg-camp/30" title="Restaurar evento">
+        <div className="flex flex-wrap gap-2">
+          {isComingSoon && !isPastEvent && (
+            <button disabled
+              className="flex items-center gap-1.5 rounded-lg border-2 border-dashed border-muted-foreground/30 px-4 py-2 text-sm font-semibold text-muted-foreground cursor-not-allowed opacity-60">
+              🕐 Inscrições abrem em {diffDays - 30} dia{diffDays - 30 !== 1 ? "s" : ""}
+            </button>
+          )}
+          {canJoin && (
+            <button onClick={handleJoin}
+              className="flex items-center gap-1.5 rounded-lg border-2 border-dashed border-primary/40 px-4 py-2 text-sm font-semibold text-primary transition-colors hover:border-primary hover:bg-primary/5">
+              <Plus className="h-4 w-4" />Entrar na escala
+            </button>
+          )}
+          {canLeave && (
+            <button onClick={handleLeave}
+              className="flex items-center gap-1.5 rounded-lg border border-destructive/30 px-4 py-2 text-sm font-semibold text-destructive transition-colors hover:bg-destructive/5">
+              <X className="h-4 w-4" />Sair da escala
+            </button>
+          )}
+          {isAdmin && (
+            <div className="flex gap-1.5 ml-auto">
+              {event.is_deleted ? (
+                <>
+                  <button onClick={handleRestore}
+                    className="rounded-lg bg-camp/20 px-3 py-2 text-xs font-semibold text-camp hover:bg-camp/30" title="Restaurar evento">
+                    <RotateCcw className="h-3.5 w-3.5" />
+                  </button>
+                  <button onClick={handlePermanentDelete}
+                    className="rounded-lg bg-destructive/10 px-3 py-2 text-xs text-destructive hover:bg-destructive/20" title="Deletar permanentemente">
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </button>
+                </>
+              ) : (
+                <>
+                  {isFinalized && (
+                    <button onClick={handleToggleLock}
+                      className="rounded-lg bg-secondary/20 px-3 py-2 text-xs font-semibold text-secondary hover:bg-secondary/30" title="Reabrir escala">
                       <RotateCcw className="h-3.5 w-3.5" />
                     </button>
-                    <button onClick={handlePermanentDelete}
-                      className="rounded-lg bg-destructive/10 px-3 py-2 text-xs text-destructive hover:bg-destructive/20" title="Deletar permanentemente">
-                      <Trash2 className="h-3.5 w-3.5" />
+                  )}
+                  {!isFinalized && event.monitors.length > 0 && (
+                    <button onClick={() => setShowFinalize(true)}
+                      className="rounded-lg bg-camp/20 px-3 py-2 text-xs font-semibold text-camp hover:bg-camp/30" title="Finalizar escala">
+                      <ClipboardCheck className="h-3.5 w-3.5" />
                     </button>
-                  </>
-                ) : (
-                  <>
-                    {isFinalized && (
-                      <button onClick={handleToggleLock}
-                        className="rounded-lg bg-secondary/20 px-3 py-2 text-xs font-semibold text-secondary hover:bg-secondary/30" title="Reabrir escala">
-                        <RotateCcw className="h-3.5 w-3.5" />
-                      </button>
-                    )}
-                    {!isFinalized && event.monitors.length > 0 && (
-                      <button onClick={() => setShowFinalize(true)}
-                        className="rounded-lg bg-camp/20 px-3 py-2 text-xs font-semibold text-camp hover:bg-camp/30" title="Finalizar escala">
-                        <ClipboardCheck className="h-3.5 w-3.5" />
-                      </button>
-                    )}
-                    <button onClick={handleCopyWhatsApp} className="rounded-lg bg-muted px-3 py-2 text-xs text-muted-foreground hover:bg-muted/80" title="Copiar para WhatsApp">
-                      <Copy className="h-3.5 w-3.5" />
-                    </button>
-                    <button onClick={handleSoftDelete} className="rounded-lg bg-destructive/10 px-3 py-2 text-xs text-destructive hover:bg-destructive/20" title="Mover para lixeira">
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </button>
-                  </>
-                )}
-              </div>
-            )}
-          </div>
-        )}
+                  )}
+                  <button onClick={handleCopyWhatsApp} className="rounded-lg bg-muted px-3 py-2 text-xs text-muted-foreground hover:bg-muted/80" title="Copiar para WhatsApp">
+                    <Copy className="h-3.5 w-3.5" />
+                  </button>
+                  <button onClick={handleSoftDelete} className="rounded-lg bg-destructive/10 px-3 py-2 text-xs text-destructive hover:bg-destructive/20" title="Mover para lixeira">
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </button>
+                </>
+              )}
+            </div>
+          )}
+        </div>
       </motion.div>
+
+      {showEditModal && (
+        <EditEventModal
+          event={event}
+          onClose={() => setShowEditModal(false)}
+          onSaved={onRefresh}
+        />
+      )}
+
+      {showDetailModal && (
+        <CalendarEventModal
+          event={event}
+          onClose={() => setShowDetailModal(false)}
+          onRefresh={() => { onRefresh(); setShowDetailModal(false); }}
+        />
+      )}
 
       {showFinalize && (
         <FinalizeScaleDialog

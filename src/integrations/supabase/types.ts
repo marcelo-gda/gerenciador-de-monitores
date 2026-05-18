@@ -95,15 +95,19 @@ export type Database = {
           address: string
           created_at: string
           created_by: string | null
+          custom_rates: Json | null
           description: string | null
           emoji: string
           end_date: string | null
           end_time: string
           event_date: string
+          force_available: boolean
           google_event_id: string | null
           id: string
           is_deleted: boolean
           is_locked: boolean
+          is_paid: boolean
+          observations: string | null
           start_time: string
           team: number | null
           title: string
@@ -115,15 +119,19 @@ export type Database = {
           address: string
           created_at?: string
           created_by?: string | null
+          custom_rates?: Json | null
           description?: string | null
           emoji?: string
           end_date?: string | null
           end_time: string
           event_date: string
+          force_available?: boolean
           google_event_id?: string | null
           id?: string
           is_deleted?: boolean
           is_locked?: boolean
+          is_paid?: boolean
+          observations?: string | null
           start_time: string
           team?: number | null
           title: string
@@ -135,15 +143,19 @@ export type Database = {
           address?: string
           created_at?: string
           created_by?: string | null
+          custom_rates?: Json | null
           description?: string | null
           emoji?: string
           end_date?: string | null
           end_time?: string
           event_date?: string
+          force_available?: boolean
           google_event_id?: string | null
           id?: string
           is_deleted?: boolean
           is_locked?: boolean
+          is_paid?: boolean
+          observations?: string | null
           start_time?: string
           team?: number | null
           title?: string

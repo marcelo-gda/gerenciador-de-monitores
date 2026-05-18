@@ -3,7 +3,10 @@
     "allow": [
       "Bash(Get-ChildItem -Depth 1)",
       "Bash(Select-Object Name, FullName)",
-      "Bash(npx tsc *)"
+      "Bash(npx tsc *)",
+      "Bash(Get-ChildItem -Path . -Force)",
+      "Bash(Select-Object Name)",
+      "Bash(npx supabase *)"
     ]
   }
 }
