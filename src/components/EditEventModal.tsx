@@ -72,6 +72,16 @@ const EditEventModal = ({ event, onClose, onSaved }: EditEventModalProps) => {
   const [teams, setTeams] = useState<Team[]>([]);
   const [dataLoading, setDataLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [editingRates, setEditingRates] = useState(false);
+
+  const getDurationHours = (): number => {
+    const [sh = 0, sm = 0] = startTime.split(":").map(Number);
+    const [eh = 0, em = 0] = endTime.split(":").map(Number);
+    const startMins = sh * 60 + sm;
+    let endMins = eh * 60 + em;
+    if (endMins <= startMins) endMins += 24 * 60;
+    return (endMins - startMins) / 60;
+  };
 
   useEffect(() => {
     const load = async () => {
@@ -331,11 +341,24 @@ const EditEventModal = ({ event, onClose, onSaved }: EditEventModalProps) => {
             />
           </div>
 
-          {/* Valores por hora */}
+          {/* Tabela de valores */}
           <div>
-            <div className="flex items-center gap-2 mb-3">
-              <span className="text-sm font-semibold text-foreground">💰 Valores por hora</span>
-              <span className="text-xs text-muted-foreground">(somente para este evento)</span>
+            <div className="flex items-center justify-between gap-2 mb-3">
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-semibold text-foreground">💰 Tabela de valores</span>
+                <span className="text-xs text-muted-foreground">(somente para este evento)</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setEditingRates((v) => !v)}
+                className={`flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold border transition-colors ${
+                  editingRates
+                    ? "border-primary/40 bg-primary/10 text-primary"
+                    : "border-border text-muted-foreground hover:bg-muted"
+                }`}
+              >
+                {editingRates ? "✅ Editando" : "✏️ Editar valores"}
+              </button>
             </div>
             {dataLoading ? (
               <div className="flex items-center gap-2 text-sm text-muted-foreground py-3">
@@ -346,100 +369,137 @@ const EditEventModal = ({ event, onClose, onSaved }: EditEventModalProps) => {
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="bg-muted/50">
-                      <th className="text-left px-3 py-2 text-xs font-semibold text-muted-foreground">
-                        Hierarquia
-                      </th>
-                      <th className="text-right px-3 py-2 text-xs font-semibold text-muted-foreground">
-                        Padrão
-                      </th>
-                      <th className="text-right px-3 py-2 text-xs font-semibold text-muted-foreground">
-                        Customizado
-                      </th>
+                      <th className="text-left px-3 py-2 text-xs font-semibold text-muted-foreground">Hierarquia</th>
+                      <th className="text-right px-3 py-2 text-xs font-semibold text-muted-foreground">Padrão/h</th>
+                      <th className="text-right px-3 py-2 text-xs font-semibold text-muted-foreground">Custom/h</th>
+                      <th className="text-right px-3 py-2 text-xs font-semibold text-muted-foreground">Total</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-border">
                     {hierarchies.map((h) => {
                       const defaultRate = getDefaultRate(h.id);
                       const customVal = customRates[h.slug];
+                      const effectiveRate =
+                        customVal !== undefined && customVal !== "" ? Number(customVal) : (defaultRate ?? 0);
+                      const duration = getDurationHours();
+                      const computedTotal = effectiveRate * duration;
+
                       return (
                         <tr key={h.id}>
-                          <td className="px-3 py-2 font-medium">
-                            {h.emoji} {h.name}
-                          </td>
+                          <td className="px-3 py-2 font-medium text-xs">{h.emoji} {h.name}</td>
                           <td className="px-3 py-2 text-right text-muted-foreground text-xs">
-                            {defaultRate !== null ? `R$ ${defaultRate.toFixed(2)}/h` : "—"}
+                            {defaultRate !== null ? `R$ ${defaultRate.toFixed(2)}` : "—"}
                           </td>
                           <td className="px-3 py-2">
-                            <input
-                              type="number"
-                              min="0"
-                              step="0.01"
-                              placeholder="Padrão"
-                              value={customVal ?? ""}
-                              onChange={(e) =>
-                                setCustomRates((prev) => ({
-                                  ...prev,
-                                  [h.slug]:
-                                    e.target.value === "" ? "" : Number(e.target.value),
-                                }))
-                              }
-                              className="w-24 ml-auto block rounded-md border border-input bg-background px-2 py-1 text-sm text-right outline-none focus:ring-2 focus:ring-ring"
-                            />
+                            {editingRates ? (
+                              <div className="flex items-center justify-end gap-0.5">
+                                <span className="text-[10px] text-muted-foreground">R$</span>
+                                <input
+                                  type="number"
+                                  min="0"
+                                  step="0.01"
+                                  placeholder="—"
+                                  value={customVal ?? ""}
+                                  onChange={(e) =>
+                                    setCustomRates((prev) => ({
+                                      ...prev,
+                                      [h.slug]: e.target.value === "" ? "" : Number(e.target.value),
+                                    }))
+                                  }
+                                  className="w-14 rounded border border-input bg-background px-1.5 py-0.5 text-xs text-right outline-none focus:ring-1 focus:ring-ring"
+                                />
+                                <span className="text-[10px] text-muted-foreground">/h</span>
+                              </div>
+                            ) : (
+                              <span className="block text-right text-xs text-muted-foreground">
+                                {customVal !== undefined && customVal !== ""
+                                  ? `R$ ${Number(customVal).toFixed(2)}`
+                                  : <span className="opacity-40">Padrão</span>}
+                              </span>
+                            )}
+                          </td>
+                          <td className="px-3 py-2">
+                            {editingRates ? (
+                              <div className="flex items-center justify-end gap-0.5">
+                                <span className="text-[10px] text-muted-foreground">R$</span>
+                                <input
+                                  type="number"
+                                  min="0"
+                                  step="0.01"
+                                  placeholder="—"
+                                  value={duration > 0 && effectiveRate > 0 ? computedTotal.toFixed(2) : ""}
+                                  onChange={(e) => {
+                                    if (duration <= 0) return;
+                                    const total = e.target.value === "" ? "" : Number(e.target.value);
+                                    const rate = total !== "" ? Number(total) / duration : "";
+                                    setCustomRates((prev) => ({ ...prev, [h.slug]: rate }));
+                                  }}
+                                  className="w-14 rounded border border-input bg-background px-1.5 py-0.5 text-xs text-right outline-none focus:ring-1 focus:ring-ring"
+                                />
+                              </div>
+                            ) : (
+                              <span className="block text-right text-xs font-semibold text-foreground">
+                                {duration > 0 && effectiveRate > 0
+                                  ? `R$ ${computedTotal.toFixed(2)}`
+                                  : <span className="text-muted-foreground/40">—</span>}
+                              </span>
+                            )}
                           </td>
                         </tr>
                       );
                     })}
-                    {extraRates.map((extra, i) => (
-                      <tr key={`extra-${i}`}>
-                        <td className="px-3 py-2">
-                          <input
-                            value={extra.key}
-                            onChange={(e) =>
-                              setExtraRates((prev) =>
-                                prev.map((r, j) => (j === i ? { ...r, key: e.target.value } : r))
-                              )
-                            }
-                            placeholder="Nome da hierarquia"
-                            className="w-full rounded-md border border-input bg-background px-2 py-1 text-sm outline-none focus:ring-2 focus:ring-ring"
-                          />
-                        </td>
-                        <td className="px-3 py-2 text-right text-muted-foreground text-xs">—</td>
-                        <td className="px-3 py-2">
-                          <div className="flex items-center gap-1 justify-end">
+                    {extraRates.map((extra, i) => {
+                      const duration = getDurationHours();
+                      const rate = extra.value !== "" ? Number(extra.value) : 0;
+                      return (
+                        <tr key={`extra-${i}`}>
+                          <td className="px-3 py-2">
                             <input
-                              type="number"
-                              min="0"
-                              step="0.01"
-                              placeholder="R$/h"
-                              value={extra.value}
+                              value={extra.key}
                               onChange={(e) =>
                                 setExtraRates((prev) =>
-                                  prev.map((r, j) =>
-                                    j === i
-                                      ? {
-                                          ...r,
-                                          value:
-                                            e.target.value === "" ? "" : Number(e.target.value),
-                                        }
-                                      : r
-                                  )
+                                  prev.map((r, j) => (j === i ? { ...r, key: e.target.value } : r))
                                 )
                               }
-                              className="w-24 rounded-md border border-input bg-background px-2 py-1 text-sm text-right outline-none focus:ring-2 focus:ring-ring"
+                              placeholder="Nome"
+                              className="w-full rounded border border-input bg-background px-2 py-0.5 text-xs outline-none focus:ring-1 focus:ring-ring"
                             />
-                            <button
-                              type="button"
-                              onClick={() =>
-                                setExtraRates((prev) => prev.filter((_, j) => j !== i))
-                              }
-                              className="shrink-0 rounded p-1 text-destructive hover:bg-destructive/10 transition-colors"
-                            >
-                              <Trash2 className="h-3.5 w-3.5" />
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
+                          </td>
+                          <td className="px-3 py-2 text-right text-muted-foreground text-xs">—</td>
+                          <td className="px-3 py-2">
+                            <div className="flex items-center justify-end gap-0.5">
+                              <span className="text-[10px] text-muted-foreground">R$</span>
+                              <input
+                                type="number"
+                                min="0"
+                                step="0.01"
+                                placeholder="0"
+                                value={extra.value}
+                                onChange={(e) =>
+                                  setExtraRates((prev) =>
+                                    prev.map((r, j) =>
+                                      j === i ? { ...r, value: e.target.value === "" ? "" : Number(e.target.value) } : r
+                                    )
+                                  )
+                                }
+                                className="w-14 rounded border border-input bg-background px-1.5 py-0.5 text-xs text-right outline-none focus:ring-1 focus:ring-ring"
+                              />
+                              <span className="text-[10px] text-muted-foreground">/h</span>
+                              <button
+                                type="button"
+                                onClick={() => setExtraRates((prev) => prev.filter((_, j) => j !== i))}
+                                className="ml-0.5 shrink-0 rounded p-1 text-destructive hover:bg-destructive/10 transition-colors"
+                              >
+                                <Trash2 className="h-3 w-3" />
+                              </button>
+                            </div>
+                          </td>
+                          <td className="px-3 py-2 text-right text-xs font-semibold text-foreground">
+                            {duration > 0 && rate > 0 ? `R$ ${(rate * duration).toFixed(2)}` : <span className="text-muted-foreground/40">—</span>}
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
                 <div className="border-t border-border">
