@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
-import { X, CheckCircle2, AlertCircle } from "lucide-react";
+import { X, CheckCircle2, Circle } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
@@ -42,10 +42,17 @@ const FinalizeScaleDialog = ({ eventId, eventTitle, monitors, onClose, onFinaliz
   const { user } = useAuth();
   const [hierarchies, setHierarchies] = useState<Hierarchy[]>([]);
   const [saving, setSaving] = useState(false);
+
+  // Quais monitores estão selecionados para escalar
+  const [selected, setSelected] = useState<Set<string>>(() => {
+    return new Set(monitors.filter((m) => m.is_confirmed).map((m) => m.user_id));
+  });
+
+  // Cargos de cada monitor
   const [levels, setLevels] = useState<Record<string, MonitorLevel>>(() => {
     const initial: Record<string, MonitorLevel> = {};
     monitors.forEach((m) => {
-      if (m.is_confirmed && m.level) initial[m.user_id] = m.level as MonitorLevel;
+      if (m.level) initial[m.user_id] = m.level as MonitorLevel;
     });
     return initial;
   });
@@ -60,35 +67,55 @@ const FinalizeScaleDialog = ({ eventId, eventTitle, monitors, onClose, onFinaliz
       });
   }, []);
 
-  const confirmedMonitors = monitors.filter((m) => m.is_confirmed);
-  const unselectedMonitors = monitors.filter((m) => !m.is_confirmed);
+  const toggleMonitor = (userId: string) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(userId)) next.delete(userId);
+      else next.add(userId);
+      return next;
+    });
+  };
+
+  const selectedMonitors = monitors.filter((m) => selected.has(m.user_id));
 
   const handleFinalize = async () => {
-    const missingLevel = confirmedMonitors.some((m) => !levels[m.user_id]);
+    const missingLevel = selectedMonitors.some((m) => !levels[m.user_id]);
     if (missingLevel) {
       toast.error("Defina o cargo de todos os monitores escalados");
+      return;
+    }
+    if (selectedMonitors.length === 0) {
+      toast.error("Selecione ao menos um monitor para escalar");
       return;
     }
 
     setSaving(true);
 
-    for (const m of confirmedMonitors) {
+    // Reseta is_confirmed de todos os monitores do evento
+    await supabase
+      .from("event_monitors")
+      .update({ is_confirmed: false })
+      .eq("event_id", eventId);
+
+    // Confirma e salva cargo dos selecionados
+    for (const m of selectedMonitors) {
       await supabase
         .from("event_monitors")
-        .update({ level: levels[m.user_id] })
+        .update({ is_confirmed: true, level: levels[m.user_id] })
         .eq("event_id", eventId)
         .eq("user_id", m.user_id);
     }
 
+    // Trava o evento
     await supabase.from("events").update({ is_locked: true }).eq("id", eventId);
 
+    // Notifica os escalados
     if (user) {
-      const hierarchyLabel = (slug: string) =>
-        hierarchies.find((h) => h.slug === slug)
-          ? `${hierarchies.find((h) => h.slug === slug)!.emoji} ${hierarchies.find((h) => h.slug === slug)!.name}`
-          : slug;
-
-      const notifications = confirmedMonitors.map((m) => ({
+      const hierarchyLabel = (slug: string) => {
+        const h = hierarchies.find((h) => h.slug === slug);
+        return h ? `${h.emoji} ${h.name}` : slug;
+      };
+      const notifications = selectedMonitors.map((m) => ({
         sender_id: user.id,
         recipient_id: m.user_id,
         content: `✅ Você foi escalado(a) para "${eventTitle}" como ${hierarchyLabel(levels[m.user_id])}! Confira os detalhes na escala.`,
@@ -107,9 +134,10 @@ const FinalizeScaleDialog = ({ eventId, eventTitle, monitors, onClose, onFinaliz
       <motion.div
         initial={{ scale: 0.95, opacity: 0 }}
         animate={{ scale: 1, opacity: 1 }}
-        className="w-full max-w-md rounded-lg border-2 border-border bg-card p-5 shadow-xl"
+        className="w-full max-w-md rounded-lg border-2 border-border bg-card shadow-xl max-h-[90vh] flex flex-col"
       >
-        <div className="mb-4 flex items-center justify-between">
+        {/* Header */}
+        <div className="flex items-center justify-between p-5 border-b border-border">
           <h2 className="font-display text-lg font-bold text-foreground">
             <CheckCircle2 className="mr-1 inline h-5 w-5 text-camp" />
             Finalizar Escala
@@ -119,69 +147,67 @@ const FinalizeScaleDialog = ({ eventId, eventTitle, monitors, onClose, onFinaliz
           </button>
         </div>
 
-        <p className="mb-3 text-sm text-muted-foreground">
-          Deseja escalar esses monitores para <strong>{eventTitle}</strong>?
-        </p>
+        {/* Subheader */}
+        <div className="px-5 pt-3 pb-2">
+          <p className="text-sm text-muted-foreground">
+            Selecione os monitores escalados para <strong>{eventTitle}</strong> e defina os cargos.
+          </p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            {selectedMonitors.length} de {monitors.length} selecionados
+          </p>
+        </div>
 
-        {confirmedMonitors.length === 0 ? (
-          <div className="mb-4 flex items-center gap-2 rounded-lg border-2 border-destructive/30 bg-destructive/5 p-3">
-            <AlertCircle className="h-5 w-5 text-destructive shrink-0" />
-            <p className="text-sm text-destructive">
-              Nenhum monitor pré-selecionado. Volte e marque os monitores antes de finalizar.
-            </p>
-          </div>
-        ) : (
-          <div className="max-h-64 space-y-2 overflow-y-auto mb-4 pr-1">
-            <p className="text-xs font-semibold text-camp mb-1">✅ Escalados ({confirmedMonitors.length}):</p>
-            {confirmedMonitors.map((m) => (
+        {/* Lista */}
+        <div className="flex-1 overflow-y-auto px-5 pb-3 space-y-2">
+          {monitors.map((m) => {
+            const isSelected = selected.has(m.user_id);
+            return (
               <div
                 key={m.user_id}
-                className="flex items-center gap-2 rounded-lg border-2 border-camp bg-camp/10 p-3"
+                className={`flex items-center gap-3 rounded-lg border-2 p-3 transition-all cursor-pointer ${
+                  isSelected
+                    ? "border-camp bg-camp/10"
+                    : "border-border bg-background hover:border-border/80"
+                }`}
+                onClick={() => toggleMonitor(m.user_id)}
               >
-                <CheckCircle2 className="h-4 w-4 text-camp shrink-0" />
-                <span className="text-sm font-medium text-foreground flex-1 min-w-0 truncate">
+                {isSelected ? (
+                  <CheckCircle2 className="h-5 w-5 text-camp shrink-0" />
+                ) : (
+                  <Circle className="h-5 w-5 text-muted-foreground/40 shrink-0" />
+                )}
+                <span className={`text-sm font-medium flex-1 min-w-0 truncate ${isSelected ? "text-foreground" : "text-muted-foreground"}`}>
                   {m.display_name}
                 </span>
-                <select
-                  value={levels[m.user_id] || ""}
-                  onChange={(e) =>
-                    setLevels({ ...levels, [m.user_id]: e.target.value as MonitorLevel })
-                  }
-                  className={`shrink-0 rounded-full px-2 py-1 text-xs font-semibold outline-none border ${
-                    levels[m.user_id]
-                      ? levelColors[levels[m.user_id]]
-                      : "border-destructive/50 bg-destructive/5 text-destructive"
-                  }`}
-                >
-                  <option value="">Cargo...</option>
-                  {hierarchies.map((h) => (
-                    <option key={h.id} value={h.slug}>
-                      {h.emoji} {h.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            ))}
-
-            {unselectedMonitors.length > 0 && (
-              <>
-                <p className="text-xs font-semibold text-muted-foreground mt-3 mb-1">
-                  Não escalados ({unselectedMonitors.length}):
-                </p>
-                {unselectedMonitors.map((m) => (
-                  <div
-                    key={m.user_id}
-                    className="flex items-center gap-3 rounded-lg border-2 border-border bg-background p-3 opacity-50"
+                {isSelected && (
+                  <select
+                    value={levels[m.user_id] || ""}
+                    onChange={(e) => {
+                      e.stopPropagation();
+                      setLevels({ ...levels, [m.user_id]: e.target.value as MonitorLevel });
+                    }}
+                    onClick={(e) => e.stopPropagation()}
+                    className={`shrink-0 rounded-full px-2 py-1 text-xs font-semibold outline-none border ${
+                      levels[m.user_id]
+                        ? levelColors[levels[m.user_id]]
+                        : "border-destructive/50 bg-destructive/5 text-destructive"
+                    }`}
                   >
-                    <span className="text-sm font-medium text-foreground">{m.display_name}</span>
-                  </div>
-                ))}
-              </>
-            )}
-          </div>
-        )}
+                    <option value="">Cargo...</option>
+                    {hierarchies.map((h) => (
+                      <option key={h.id} value={h.slug}>
+                        {h.emoji} {h.name}
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </div>
+            );
+          })}
+        </div>
 
-        <div className="flex gap-2">
+        {/* Footer */}
+        <div className="flex gap-2 border-t border-border p-5">
           <button
             onClick={onClose}
             className="flex-1 rounded-lg border border-border px-4 py-2 text-sm font-semibold text-muted-foreground hover:bg-muted"
@@ -190,10 +216,10 @@ const FinalizeScaleDialog = ({ eventId, eventTitle, monitors, onClose, onFinaliz
           </button>
           <button
             onClick={handleFinalize}
-            disabled={saving || confirmedMonitors.length === 0}
+            disabled={saving || selectedMonitors.length === 0}
             className="flex-1 rounded-lg bg-camp px-4 py-2 text-sm font-semibold text-primary-foreground hover:opacity-90 disabled:opacity-50"
           >
-            {saving ? "Salvando..." : "Confirmar e Finalizar"}
+            {saving ? "Salvando..." : `Escalar ${selectedMonitors.length > 0 ? `(${selectedMonitors.length})` : ""}`}
           </button>
         </div>
       </motion.div>

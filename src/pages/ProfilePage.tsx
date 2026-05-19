@@ -56,6 +56,8 @@ const ProfilePage = () => {
   const [editingProfile, setEditingProfile] = useState(false);
   const [editName, setEditName] = useState("");
   const [editPhone, setEditPhone] = useState("");
+  const [editPixKey, setEditPixKey] = useState("");
+  const [editIdentity, setEditIdentity] = useState("");
   const [savingProfile, setSavingProfile] = useState(false);
 
   const { refreshProfile } = useAuth();
@@ -63,6 +65,8 @@ const ProfilePage = () => {
   const startEditingProfile = () => {
     setEditName(profile?.display_name || "");
     setEditPhone(profile?.phone || "");
+    setEditPixKey(profile?.pix_key || "");
+    setEditIdentity(profile?.identity || "");
     setEditingProfile(true);
   };
 
@@ -72,7 +76,12 @@ const ProfilePage = () => {
     setSavingProfile(true);
     const { error } = await supabase
       .from("profiles")
-      .update({ display_name: editName.trim(), phone: editPhone.trim() || null })
+      .update({
+        display_name: editName.trim(),
+        phone: editPhone.trim() || null,
+        pix_key: editPixKey.trim() || null,
+        identity: editIdentity.trim() || null,
+      })
       .eq("id", user.id);
     if (error) toast.error(error.message);
     else {
@@ -188,6 +197,20 @@ const ProfilePage = () => {
                     placeholder="Telefone"
                     value={editPhone}
                     onChange={(e) => setEditPhone(e.target.value)}
+                    className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring"
+                  />
+                  <input
+                    type="text"
+                    placeholder="Chave PIX"
+                    value={editPixKey}
+                    onChange={(e) => setEditPixKey(e.target.value)}
+                    className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring"
+                  />
+                  <input
+                    type="text"
+                    placeholder="RG / Identidade"
+                    value={editIdentity}
+                    onChange={(e) => setEditIdentity(e.target.value)}
                     className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring"
                   />
                   <div className="flex gap-2">

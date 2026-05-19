@@ -129,7 +129,6 @@ const Index = () => {
       const channel = supabase
         .channel("events-changes")
         .on("postgres_changes", { event: "*", schema: "public", table: "events" }, () => fetchEvents())
-        .on("postgres_changes", { event: "*", schema: "public", table: "event_monitors" }, () => fetchEvents())
         .subscribe();
       return () => { supabase.removeChannel(channel); };
     }

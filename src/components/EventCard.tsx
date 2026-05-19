@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { MapPin, Clock, Plus, X, Users, Lock, Copy, Trash2, CheckCircle2, ClipboardCheck, Pencil, RotateCcw } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
@@ -9,6 +9,7 @@ import JoinEventDialog from "@/components/JoinEventDialog";
 import RejectMonitorDialog from "@/components/RejectMonitorDialog";
 import EditEventModal from "@/components/EditEventModal";
 import CalendarEventModal from "@/components/CalendarEventModal";
+import MonitorProfileModal from "@/components/MonitorProfileModal";
 
 const levelLabels: Record<string, string> = {
   mestre: "Mestre",
@@ -93,12 +94,18 @@ const EventCard = ({ event, onRefresh }: EventCardProps) => {
   const [showEditModal, setShowEditModal] = useState(false);
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [rejectingMonitor, setRejectingMonitor] = useState<{ userId: string; name: string } | null>(null);
+  const [viewingMonitorId, setViewingMonitorId] = useState<string | null>(null);
+  const [localMonitors, setLocalMonitors] = useState(event.monitors);
   const [preSelected, setPreSelected] = useState<Set<string>>(() => {
     return new Set(event.monitors.filter((m) => m.is_confirmed).map((m) => m.user_id));
   });
 
-  const monitorCount = event.monitors.length;
-  const isUserInEvent = event.monitors.some((m) => m.user_id === user?.id);
+  useEffect(() => {
+    setLocalMonitors(event.monitors);
+  }, [event.monitors]);
+
+  const monitorCount = localMonitors.length;
+  const isUserInEvent = localMonitors.some((m) => m.user_id === user?.id);
   const todayLocal = new Date(new Date().getFullYear(), new Date().getMonth(), new Date().getDate());
   const [ey, em, ed] = (event.end_date || event.event_date).split("-").map(Number);
   const isPastEvent = new Date(ey, em - 1, ed) < todayLocal;
@@ -109,7 +116,7 @@ const EventCard = ({ event, onRefresh }: EventCardProps) => {
 
   const canJoin = !!user && !event.is_locked && !isUserInEvent && !isPastEvent && !isComingSoon;
   const canLeave = !!user && !event.is_locked && isUserInEvent && !isPastEvent && !isComingSoon;
-  const hasConfirmed = event.monitors.some((m) => m.is_confirmed);
+  const hasConfirmed = localMonitors.some((m) => m.is_confirmed);
   const isFinalized = event.is_locked && hasConfirmed;
 
   const togglePreSelect = async (userId: string) => {
@@ -118,7 +125,9 @@ const EventCard = ({ event, onRefresh }: EventCardProps) => {
     if (newValue) next.add(userId); else next.delete(userId);
     setPreSelected(next);
     await supabase.from("event_monitors").update({ is_confirmed: newValue }).eq("event_id", event.id).eq("user_id", userId);
-    onRefresh();
+    setLocalMonitors(prev =>
+      prev.map(m => m.user_id === userId ? { ...m, is_confirmed: newValue } : m)
+    );
   };
 
   const handleJoin = () => {
@@ -159,8 +168,8 @@ const EventCard = ({ event, onRefresh }: EventCardProps) => {
   };
 
   const handleCopyWhatsApp = () => {
-    const confirmed = event.monitors.filter((m) => m.is_confirmed);
-    const list = confirmed.length > 0 ? confirmed : event.monitors;
+    const confirmed = localMonitors.filter((m) => m.is_confirmed);
+    const list = confirmed.length > 0 ? confirmed : localMonitors;
     const lines = [
       `${event.emoji} ${event.title} - ${event.event_date} ${event.start_time} | ${event.end_time}`,
       "", event.address, "",
@@ -264,7 +273,7 @@ const EventCard = ({ event, onRefresh }: EventCardProps) => {
         {/* Monitors */}
         <div className="mb-3 flex flex-wrap gap-1.5">
           <AnimatePresence>
-            {event.monitors.map((monitor) => {
+            {localMonitors.map((monitor) => {
               const confirmed = monitor.is_confirmed;
               const notSelected = isFinalized && !confirmed;
               const isPreSelected = preSelected.has(monitor.user_id);
@@ -286,7 +295,7 @@ const EventCard = ({ event, onRefresh }: EventCardProps) => {
                     <button
                       onClick={() => togglePreSelect(monitor.user_id)}
                       className="flex items-center gap-0"
-                      title={isPreSelected ? "Desmarcar monitor" : "Pré-escalar monitor"}
+                      title={isPreSelected ? "Desmarcar monitor" : "Escalar monitor"}
                     >
                       <CheckCircle2 className={`h-3 w-3 transition-colors ${isPreSelected ? "text-camp" : "text-muted-foreground/40"}`} />
                     </button>
@@ -295,7 +304,16 @@ const EventCard = ({ event, onRefresh }: EventCardProps) => {
                   ) : (
                     <CheckCircle2 className={`h-3 w-3 ${notSelected ? "text-muted-foreground/40" : "text-muted-foreground"}`} />
                   )}
-                  {monitor.display_name}
+                  {isAdmin ? (
+                    <button
+                      onClick={(e) => { e.stopPropagation(); setViewingMonitorId(monitor.user_id); }}
+                      className="hover:underline"
+                    >
+                      {monitor.display_name}
+                    </button>
+                  ) : (
+                    monitor.display_name
+                  )}
                   {monitor.bonus_tags && monitor.bonus_tags.length > 0 && (
                     <span className="ml-0.5 text-xs">
                       {monitor.bonus_tags.map((tag) => {
@@ -378,7 +396,7 @@ const EventCard = ({ event, onRefresh }: EventCardProps) => {
                       <RotateCcw className="h-3.5 w-3.5" />
                     </button>
                   )}
-                  {!isFinalized && event.monitors.length > 0 && (
+                  {!isFinalized && localMonitors.length > 0 && (
                     <button onClick={() => setShowFinalize(true)}
                       className="rounded-lg bg-camp/20 px-3 py-2 text-xs font-semibold text-camp hover:bg-camp/30" title="Finalizar escala">
                       <ClipboardCheck className="h-3.5 w-3.5" />
@@ -417,7 +435,7 @@ const EventCard = ({ event, onRefresh }: EventCardProps) => {
         <FinalizeScaleDialog
           eventId={event.id}
           eventTitle={event.title}
-          monitors={event.monitors}
+          monitors={localMonitors}
           onClose={() => setShowFinalize(false)}
           onFinalized={onRefresh}
         />
@@ -441,6 +459,12 @@ const EventCard = ({ event, onRefresh }: EventCardProps) => {
           monitorName={rejectingMonitor.name}
           onClose={() => setRejectingMonitor(null)}
           onRejected={onRefresh}
+        />
+      )}
+      {viewingMonitorId && (
+        <MonitorProfileModal
+          userId={viewingMonitorId}
+          onClose={() => setViewingMonitorId(null)}
         />
       )}
     </>
