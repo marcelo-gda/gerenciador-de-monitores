@@ -111,10 +111,11 @@ function parseEventDateTime(gcalEvent: GoogleCalendarEvent) {
   if (gcalEvent.start?.dateTime) {
     const startDt = new Date(startStr);
     const endDt = new Date(endStr);
-    eventDate = startDt.toISOString().split("T")[0];
-    endDate = endDt.toISOString().split("T")[0];
-    if (endDate === eventDate) endDate = null;
-
+    // Extrai a data direto da string (ex: "2026-05-23T23:00:00-03:00" → "2026-05-23")
+    // sem converter para UTC, evitando bug de fuso horário
+    eventDate = startStr.substring(0, 10);
+    const rawEndDate = endStr.substring(0, 10);
+    endDate = rawEndDate !== eventDate ? rawEndDate : null;
     startTime = startDt.toLocaleTimeString("pt-BR", {
       hour: "2-digit",
       minute: "2-digit",

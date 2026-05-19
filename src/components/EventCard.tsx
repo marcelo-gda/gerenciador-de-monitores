@@ -29,6 +29,7 @@ interface Monitor {
   id: string;
   user_id: string;
   display_name: string;
+  nickname?: string | null;
   is_confirmed?: boolean;
   level?: string | null;
   bonus_tags?: string[];
@@ -65,26 +66,40 @@ const typeStyles: Record<string, string> = {
   sun: "bg-sun-bg border-sun/30",
   moon: "bg-moon-bg border-moon/30",
   camp: "bg-camp-bg border-camp/30",
+  long: "bg-orange-50 border-orange-300 dark:bg-orange-950/30 dark:border-orange-700",
 };
 
 const badgeStyles: Record<string, string> = {
   sun: "bg-sun/20 text-sun",
   moon: "bg-moon/20 text-moon",
   camp: "bg-camp/20 text-camp",
+  long: "bg-orange-100 text-orange-600 dark:bg-orange-900/40 dark:text-orange-400",
 };
 
-function isGreenEvent(title: string): boolean {
-  return /acampamento|gdc/i.test(title);
+function getEffectiveType(type: string, title: string, startTime: string, endTime: string): string {
+  if (type === "camp" || /acampamento|gdc/i.test(title)) return "camp";
+  const [startH = 0, startM = 0] = startTime.split(":").map(Number);
+  const [endH = 0, endM = 0] = endTime.split(":").map(Number);
+  const startMins = startH * 60 + startM;
+  let endMins = endH * 60 + endM;
+  if (endMins <= startMins) endMins += 24 * 60;
+  if (endMins - startMins > 240) return "long";
+  return (startMins + endMins) / 2 >= 18 * 60 ? "moon" : "sun";
 }
 
-function getCardStyle(title: string, type: string): string {
-  if (isGreenEvent(title)) return "bg-green-50 border-green-200 dark:bg-green-950/40 dark:border-green-800";
-  return typeStyles[type] || "bg-card border-border";
+function getCardStyle(type: string, title: string, startTime: string, endTime: string): string {
+  return typeStyles[getEffectiveType(type, title, startTime, endTime)] || "bg-card border-border";
 }
 
-function getBadgeStyle(title: string, type: string): string {
-  if (isGreenEvent(title)) return "bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-400";
-  return badgeStyles[type] || "";
+function getBadgeStyle(type: string, title: string, startTime: string, endTime: string): string {
+  return badgeStyles[getEffectiveType(type, title, startTime, endTime)] || "";
+}
+
+function getShortName(displayName: string, nickname?: string | null): string {
+  if (nickname) return nickname;
+  const parts = displayName.trim().split(' ').filter(Boolean);
+  if (parts.length <= 2) return displayName;
+  return parts[0] + ' ' + parts[1];
 }
 
 const EventCard = ({ event, onRefresh }: EventCardProps) => {
@@ -188,7 +203,7 @@ const EventCard = ({ event, onRefresh }: EventCardProps) => {
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.3 }}
-        className={`relative rounded-lg border-2 p-3 sm:p-5 ${getCardStyle(event.title, event.type)} transition-shadow hover:shadow-md ${
+        className={`relative rounded-lg border-2 p-3 sm:p-5 ${getCardStyle(event.type, event.title, event.start_time, event.end_time)} transition-shadow hover:shadow-md ${
           isPastEvent ? "opacity-50" : ""
         } ${isFinalized ? "ring-2 ring-camp/40" : event.is_locked ? "ring-2 ring-destructive/30" : ""}`}
       >
@@ -238,7 +253,7 @@ const EventCard = ({ event, onRefresh }: EventCardProps) => {
                 <Pencil className="h-3.5 w-3.5" />
               </button>
             )}
-            <span className={`rounded-full px-3 py-1 font-display text-xs font-semibold ${getBadgeStyle(event.title, event.type)}`}>
+            <span className={`rounded-full px-3 py-1 font-display text-xs font-semibold ${getBadgeStyle(event.type, event.title, event.start_time, event.end_time)}`}>
               {new Date(event.event_date + "T12:00:00").toLocaleDateString("pt-BR", { day: "numeric", month: "numeric" })}
               {event.end_date && event.end_date !== event.event_date && (
                 <> — {new Date(event.end_date + "T12:00:00").toLocaleDateString("pt-BR", { day: "numeric", month: "numeric" })}</>
@@ -309,10 +324,10 @@ const EventCard = ({ event, onRefresh }: EventCardProps) => {
                       onClick={(e) => { e.stopPropagation(); setViewingMonitorId(monitor.user_id); }}
                       className="hover:underline"
                     >
-                      {monitor.display_name}
+                      {getShortName(monitor.display_name, monitor.nickname)}
                     </button>
                   ) : (
-                    monitor.display_name
+                    getShortName(monitor.display_name, monitor.nickname)
                   )}
                   {monitor.bonus_tags && monitor.bonus_tags.length > 0 && (
                     <span className="ml-0.5 text-xs">
@@ -380,7 +395,7 @@ const EventCard = ({ event, onRefresh }: EventCardProps) => {
               {event.is_deleted ? (
                 <>
                   <button onClick={handleRestore}
-                    className="rounded-lg bg-camp/20 px-3 py-2 text-xs font-semibold text-camp hover:bg-camp/30" title="Restaurar evento">
+                    className="rounded-lg bg-emerald-100 px-3 py-2 text-xs font-semibold text-emerald-700 hover:bg-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-400" title="Restaurar evento">
                     <RotateCcw className="h-3.5 w-3.5" />
                   </button>
                   <button onClick={handlePermanentDelete}
@@ -398,7 +413,7 @@ const EventCard = ({ event, onRefresh }: EventCardProps) => {
                   )}
                   {!isFinalized && localMonitors.length > 0 && (
                     <button onClick={() => setShowFinalize(true)}
-                      className="rounded-lg bg-camp/20 px-3 py-2 text-xs font-semibold text-camp hover:bg-camp/30" title="Finalizar escala">
+                      className="rounded-lg bg-emerald-100 px-3 py-2 text-xs font-semibold text-emerald-700 hover:bg-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-400" title="Finalizar escala">
                       <ClipboardCheck className="h-3.5 w-3.5" />
                     </button>
                   )}

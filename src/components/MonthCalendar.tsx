@@ -84,22 +84,28 @@ function getEventStatus(event: EventData): "open" | "finalized" | "past" {
   return "open";
 }
 
-function isGreenEvent(title: string): boolean {
-  return /acampamento|gdc/i.test(title);
+function getEffectiveType(event: EventData): string {
+  if (event.type === "camp" || /acampamento|gdc/i.test(event.title)) return "camp";
+  const [startH = 0, startM = 0] = event.start_time.split(":").map(Number);
+  const [endH = 0, endM = 0] = event.end_time.split(":").map(Number);
+  const startMins = startH * 60 + startM;
+  let endMins = endH * 60 + endM;
+  if (endMins <= startMins) endMins += 24 * 60;
+  if (endMins - startMins > 240) return "long";
+  return (startMins + endMins) / 2 >= 18 * 60 ? "moon" : "sun";
 }
 
-const statusChip: Record<"open" | "finalized" | "past", string> = {
-  open: "bg-primary/10 border-primary/20 text-primary hover:bg-primary/20",
-  finalized: "bg-camp/10 border-camp/20 text-camp hover:bg-camp/20",
-  past: "bg-muted/50 border-border/50 text-muted-foreground hover:bg-muted",
+const typeChipColors: Record<string, string> = {
+  sun: "bg-sun/20 border-sun/40 text-sun hover:bg-sun/30",
+  moon: "bg-moon/20 border-moon/40 text-moon hover:bg-moon/30",
+  camp: "bg-camp/20 border-camp/40 text-camp hover:bg-camp/30",
+  long: "bg-orange-100 border-orange-300 text-orange-700 hover:bg-orange-200 dark:bg-orange-900/30 dark:border-orange-700 dark:text-orange-400",
 };
 
-const greenChip =
-  "bg-green-100 border-green-300 text-green-800 hover:bg-green-200 dark:bg-green-900/30 dark:border-green-700 dark:text-green-300";
-
 function getChipColor(event: EventData): string {
-  if (isGreenEvent(event.title)) return greenChip;
-  return statusChip[getEventStatus(event)];
+  if (getEventStatus(event) === "past")
+    return "bg-muted/50 border-border/50 text-muted-foreground hover:bg-muted";
+  return typeChipColors[getEffectiveType(event)] || "bg-primary/10 border-primary/20 text-primary hover:bg-primary/20";
 }
 
 function getRoundedClass(isFirst: boolean, isLast: boolean): string {

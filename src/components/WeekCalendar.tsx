@@ -77,21 +77,28 @@ function getEventStatus(event: EventData): EventStatus {
   return "open";
 }
 
-function isGreenEvent(title: string): boolean {
-  return /acampamento|gdc/i.test(title);
+function getEffectiveType(event: EventData): string {
+  if (event.type === "camp" || /acampamento|gdc/i.test(event.title)) return "camp";
+  const [startH = 0, startM = 0] = event.start_time.split(":").map(Number);
+  const [endH = 0, endM = 0] = event.end_time.split(":").map(Number);
+  const startMins = startH * 60 + startM;
+  let endMins = endH * 60 + endM;
+  if (endMins <= startMins) endMins += 24 * 60;
+  if (endMins - startMins > 240) return "long";
+  return (startMins + endMins) / 2 >= 18 * 60 ? "moon" : "sun";
 }
 
-const statusCard: Record<EventStatus, string> = {
-  open: "bg-primary/10 border-primary/30 text-primary hover:bg-primary/20",
-  finalized: "bg-camp/10 border-camp/40 text-camp hover:bg-camp/20",
-  past: "bg-muted/60 border-border text-muted-foreground hover:bg-muted",
+const typeChipColors: Record<string, string> = {
+  sun: "bg-sun/20 border-sun/40 text-sun hover:bg-sun/30",
+  moon: "bg-moon/20 border-moon/40 text-moon hover:bg-moon/30",
+  camp: "bg-camp/20 border-camp/40 text-camp hover:bg-camp/30",
+  long: "bg-orange-100 border-orange-300 text-orange-700 hover:bg-orange-200 dark:bg-orange-900/30 dark:border-orange-700 dark:text-orange-400",
 };
 
-const greenCard = "bg-green-100 border-green-300 text-green-800 hover:bg-green-200 dark:bg-green-900/30 dark:border-green-700 dark:text-green-300";
-
 function getChipColor(event: EventData): string {
-  if (isGreenEvent(event.title)) return greenCard;
-  return statusCard[getEventStatus(event)];
+  if (getEventStatus(event) === "past")
+    return "bg-muted/60 border-border text-muted-foreground hover:bg-muted";
+  return typeChipColors[getEffectiveType(event)] || "bg-primary/10 border-primary/30 text-primary hover:bg-primary/20";
 }
 
 function getRoundedClass(isFirst: boolean, isLast: boolean): string {
@@ -171,18 +178,22 @@ const WeekCalendar = ({ events, onEventClick }: WeekCalendarProps) => {
         </button>
       </div>
 
-      <div className="flex items-center gap-3 text-[11px] text-muted-foreground">
+      <div className="flex items-center gap-3 text-[11px] text-muted-foreground flex-wrap">
         <span className="flex items-center gap-1">
-          <span className="inline-block h-2 w-2 rounded-sm bg-primary/30 border border-primary/40" />
-          Em aberto
+          <span className="inline-block h-2 w-2 rounded-sm bg-sun/30 border border-sun/40" />
+          Dia
+        </span>
+        <span className="flex items-center gap-1">
+          <span className="inline-block h-2 w-2 rounded-sm bg-moon/30 border border-moon/40" />
+          Noite
         </span>
         <span className="flex items-center gap-1">
           <span className="inline-block h-2 w-2 rounded-sm bg-camp/30 border border-camp/40" />
-          Escalado
+          Camp
         </span>
         <span className="flex items-center gap-1">
-          <span className="inline-block h-2 w-2 rounded-sm bg-green-200 border border-green-300" />
-          Acampamento
+          <span className="inline-block h-2 w-2 rounded-sm bg-orange-200 border border-orange-300" />
+          Longa
         </span>
         <span className="flex items-center gap-1">
           <span className="inline-block h-2 w-2 rounded-sm bg-muted border border-border" />

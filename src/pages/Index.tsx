@@ -19,12 +19,13 @@ import { supabase } from "@/integrations/supabase/client";
 type Tab = "escala" | "info" | "especiais" | "funcoes" | "monitores";
 type ScaleTab = "open" | "finalized" | "past" | "trash";
 type TimeFilter = "all" | "this_week" | "next_week" | "this_month";
-type ShiftFilter = "all" | "sun" | "moon" | "camp";
+type ShiftFilter = "all" | "sun" | "moon" | "camp" | "long";
 
 interface Monitor {
   id: string;
   user_id: string;
   display_name: string;
+  nickname?: string | null;
   is_confirmed?: boolean;
   level?: string | null;
   bonus_tags?: string[];
@@ -82,10 +83,12 @@ const Index = () => {
       .select("id, event_id, user_id, is_confirmed, level, bonus_tags");
 
     const userIds = [...new Set((monitorsData || []).map((m: any) => m.user_id))];
-    let profilesMap: Record<string, string> = {};
+    let profilesMap: Record<string, { display_name: string; nickname?: string | null }> = {};
     if (userIds.length > 0) {
-      const { data: profiles } = await supabase.from("profiles").select("id, display_name").in("id", userIds);
-      if (profiles) profilesMap = Object.fromEntries(profiles.map((p: any) => [p.id, p.display_name]));
+      const { data: profiles } = await supabase.from("profiles").select("id, display_name, nickname").in("id", userIds);
+      if (profiles) profilesMap = Object.fromEntries(
+        profiles.map((p: any) => [p.id, { display_name: p.display_name, nickname: p.nickname || null }])
+      );
     }
 
     const mapped: EventData[] = eventsData.map((e: any) => ({
@@ -95,7 +98,8 @@ const Index = () => {
         .map((m: any) => ({
           id: m.id,
           user_id: m.user_id,
-          display_name: profilesMap[m.user_id] || "Monitor",
+          display_name: profilesMap[m.user_id]?.display_name || "Monitor",
+          nickname: profilesMap[m.user_id]?.nickname || null,
           is_confirmed: m.is_confirmed || false,
           level: m.level || null,
           bonus_tags: m.bonus_tags || [],
@@ -207,6 +211,18 @@ const Index = () => {
   const activeEvents = events.filter((e) => !e.is_deleted);
   const deletedEvents = events.filter((e) => e.is_deleted);
 
+  const getEffectiveType = (e: EventData): string => {
+    if (e.type === "camp" || /acampamento|gdc/i.test(e.title)) return "camp";
+    const [startH = 0, startM = 0] = e.start_time.split(":").map(Number);
+    const [endH = 0, endM = 0] = e.end_time.split(":").map(Number);
+    const startMins = startH * 60 + startM;
+    let endMins = endH * 60 + endM;
+    if (endMins <= startMins) endMins += 24 * 60;
+    const durationMins = endMins - startMins;
+    if (durationMins > 240) return "long";
+    return (startMins + endMins) / 2 >= 18 * 60 ? "moon" : "sun";
+  };
+
   // Apply search and shift filters
   const applyFilters = (list: EventData[]) => {
     let filtered = list;
@@ -220,13 +236,7 @@ const Index = () => {
       );
     }
     if (shiftFilter !== "all") {
-      if (shiftFilter === "camp") {
-        filtered = filtered.filter(
-          (e) => e.type === "camp" || /acampamento|gdc/i.test(e.title)
-        );
-      } else {
-        filtered = filtered.filter((e) => e.type === shiftFilter);
-      }
+      filtered = filtered.filter((e) => getEffectiveType(e) === shiftFilter);
     }
     return filtered;
   };
@@ -408,7 +418,7 @@ const Index = () => {
 
             {/* Search and shift filter */}
             <div className="mb-3 sm:mb-4 flex flex-col sm:flex-row gap-2">
-              <div className="relative flex-1">
+              <div className="relative w-full sm:w-40">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                 <input
                   type="text"
@@ -418,12 +428,19 @@ const Index = () => {
                   className="w-full rounded-lg border border-input bg-background pl-9 pr-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring placeholder:text-muted-foreground"
                 />
               </div>
-              <div className="flex items-center gap-1.5 overflow-x-auto">
-                {([["all", "Todos"], ["sun", "☀️ Tarde"], ["moon", "🌙 Noite"], ["camp", "⛺ Camp"]] as [ShiftFilter, string][]).map(([val, label]) => (
+              <div className="flex items-center gap-1 overflow-x-auto flex-1">
+                {([
+                  ["all", "Todos", null],
+                  ["sun", "☀️ Dia", "bg-yellow-400"],
+                  ["moon", "🌙 Noite", "bg-blue-500"],
+                  ["camp", "⛺ Camp", "bg-camp"],
+                  ["long", "🎪 Longa", "bg-orange-400"],
+                ] as [ShiftFilter, string, string | null][]).map(([val, label, dot]) => (
                   <button key={val} onClick={() => setShiftFilter(val)}
-                    className={`rounded-full px-2.5 sm:px-3 py-1 text-[11px] sm:text-xs font-semibold transition-colors whitespace-nowrap shrink-0 ${
+                    className={`flex items-center gap-1.5 rounded-full px-2.5 sm:px-3 py-1 text-[11px] sm:text-xs font-semibold transition-colors whitespace-nowrap shrink-0 ${
                       shiftFilter === val ? "bg-primary/10 text-primary border border-primary/30" : "text-muted-foreground hover:bg-muted border border-transparent"
                     }`}>
+                    {dot && <span className={`inline-block h-2 w-2 rounded-full shrink-0 ${dot}`} />}
                     {label}
                   </button>
                 ))}

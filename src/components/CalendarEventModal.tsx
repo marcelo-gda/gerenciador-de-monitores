@@ -70,7 +70,7 @@ const levelLabels: Record<string, string> = {
 };
 
 const typeLabels: Record<string, string> = {
-  sun: "☀️ Tarde",
+  sun: "☀️ Dia",
   moon: "🌙 Noite",
   camp: "⛺ Acampamento",
 };
@@ -80,6 +80,15 @@ const typeBadge: Record<string, string> = {
   moon: "bg-moon/20 text-moon border-moon/30",
   camp: "bg-camp/20 text-camp border-camp/30",
 };
+
+function getEffectiveType(type: string, startTime: string, endTime: string): string {
+  if (type === 'camp') return 'camp';
+  const [startH, startM] = startTime.split(':').map(Number);
+  let [endH, endM] = endTime.split(':').map(Number);
+  if (endH < startH) endH += 24;
+  const midpoint = ((startH * 60 + startM) + (endH * 60 + endM)) / 2;
+  return midpoint >= 18 * 60 ? 'moon' : 'sun';
+}
 
 const CalendarEventModal = ({ event, onClose, onRefresh }: CalendarEventModalProps) => {
   const { user, isAdmin } = useAuth();
@@ -219,10 +228,10 @@ const CalendarEventModal = ({ event, onClose, onRefresh }: CalendarEventModalPro
               <div className="mt-1.5 flex flex-wrap gap-1.5">
                 <span
                   className={`rounded-full border px-2 py-0.5 text-xs font-semibold ${
-                    typeBadge[event.type] || "bg-muted text-muted-foreground border-border"
+                    typeBadge[getEffectiveType(event.type, event.start_time, event.end_time)] || "bg-muted text-muted-foreground border-border"
                   }`}
                 >
-                  {typeLabels[event.type] || event.type}
+                  {typeLabels[getEffectiveType(event.type, event.start_time, event.end_time)] || event.type}
                 </span>
                 {isFinalized && (
                   <span className="flex items-center gap-1 rounded-full bg-camp/20 px-2 py-0.5 text-xs font-semibold text-camp">
