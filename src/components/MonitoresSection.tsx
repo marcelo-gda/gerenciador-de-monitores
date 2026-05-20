@@ -37,7 +37,7 @@ interface EditForm {
   role_ids: string[];
 }
 
-type SortField = "name" | "confirmed" | "history";
+type SortField = "name" | "mes" | "ano" | "inscricoes";
 type SortDir = "asc" | "desc";
 
 const MonitoresSection = () => {
@@ -61,19 +61,13 @@ const MonitoresSection = () => {
   const { data: profiles = [], isLoading } = useQuery({
     queryKey: ["monitors-profiles"],
     queryFn: async () => {
-      const { data: adminRoles } = await supabase
-        .from("user_roles")
-        .select("user_id")
-        .in("role", ["admin", "master_admin"]);
-      const adminIds = new Set((adminRoles ?? []).map((r: any) => r.user_id as string));
-
       const { data, error } = await supabase
         .from("profiles")
         .select("id, display_name, nickname, identity, hierarchy_ids, role_ids")
         .eq("status", "approved")
         .order("display_name", { ascending: true });
       if (error) throw error;
-      return ((data ?? []) as Profile[]).filter((p) => !adminIds.has(p.id));
+      return (data ?? []) as Profile[];
     },
   });
 
@@ -101,6 +95,39 @@ const MonitoresSection = () => {
     },
   });
 
+  const { data: monitorStats = [] } = useQuery({
+    queryKey: ["monitor-stats"],
+    queryFn: async () => {
+      const yearStart = `${new Date().getFullYear()}-01-01`;
+
+      const { data: eventsData } = await supabase
+        .from("events")
+        .select("id, event_date")
+        .eq("is_deleted", false)
+        .gte("event_date", yearStart);
+
+      const eventDateMap = Object.fromEntries(
+        (eventsData ?? []).map((e: any) => [e.id, e.event_date as string])
+      );
+      const validEventIds = new Set(Object.keys(eventDateMap));
+
+      if (validEventIds.size === 0) return [];
+
+      const { data: emData, error } = await supabase
+        .from("event_monitors")
+        .select("user_id, is_confirmed, event_id")
+        .in("event_id", [...validEventIds]);
+
+      if (error) throw error;
+
+      return (emData ?? []).map((m: any) => ({
+        user_id: m.user_id as string,
+        is_confirmed: m.is_confirmed as boolean,
+        event_date: eventDateMap[m.event_id] ?? null,
+      })).filter((m) => m.event_date !== null);
+    },
+  });
+
   // Fetch emails via RPC (admin only)
   useEffect(() => {
     if (!isAdmin) return;
@@ -114,7 +141,7 @@ const MonitoresSection = () => {
         });
         setEmails(map);
       })
-      .catch(() => {});
+      .then(undefined, () => {});
   }, [isAdmin]);
 
   // ── Mutation ──────────────────────────────────────────────────────────────
@@ -178,6 +205,27 @@ const MonitoresSection = () => {
   const hierarchyById = Object.fromEntries(hierarchies.map((h) => [h.id, h]));
   const roleById = Object.fromEntries(specialRoles.map((r) => [r.id, r]));
 
+  const now = new Date();
+  const thisMonth = now.getMonth();
+  const thisYear = now.getFullYear();
+
+  const statsMap = useMemo(() => {
+    const map: Record<string, { mes: number; ano: number; inscricoesMes: number }> = {};
+    for (const entry of monitorStats) {
+      const { event_date, user_id, is_confirmed } = entry as any;
+      if (!event_date) continue;
+      const [, mStr] = event_date.split("-");
+      const eventMonth = parseInt(mStr, 10) - 1;
+      if (!map[user_id]) map[user_id] = { mes: 0, ano: 0, inscricoesMes: 0 };
+      if (is_confirmed) map[user_id].ano++;
+      if (eventMonth === thisMonth) {
+        if (is_confirmed) map[user_id].mes++;
+        map[user_id].inscricoesMes++;
+      }
+    }
+    return map;
+  }, [monitorStats, thisMonth]);
+
   const filteredAndSorted = useMemo(() => {
     let result = [...profiles];
     if (search.trim()) {
@@ -201,10 +249,14 @@ const MonitoresSection = () => {
         const cmp = a.display_name.localeCompare(b.display_name, "pt-BR");
         return sortDir === "asc" ? cmp : -cmp;
       }
-      return 0;
+      const sa = statsMap[a.id] ?? { mes: 0, ano: 0, inscricoesMes: 0 };
+      const sb = statsMap[b.id] ?? { mes: 0, ano: 0, inscricoesMes: 0 };
+      const key = sortField === "mes" ? "mes" : sortField === "ano" ? "ano" : "inscricoesMes";
+      const cmp = sa[key] - sb[key];
+      return sortDir === "asc" ? cmp : -cmp;
     });
     return result;
-  }, [profiles, search, hierarchyFilter, roleFilter, sortField, sortDir]);
+  }, [profiles, search, hierarchyFilter, roleFilter, sortField, sortDir, statsMap]);
 
   const SortIcon = ({ field }: { field: SortField }) => {
     if (sortField !== field)
@@ -214,7 +266,7 @@ const MonitoresSection = () => {
       : <ChevronDown className="ml-1 inline-block h-3 w-3" />;
   };
 
-  const colSpan = isAdmin ? 8 : 6;
+  const colSpan = isAdmin ? 7 : 6;
 
   // ── Render ────────────────────────────────────────────────────────────────
 
@@ -338,27 +390,19 @@ const MonitoresSection = () => {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead
-                  className="cursor-pointer select-none whitespace-nowrap"
-                  onClick={() => toggleSort("name")}
-                >
+                <TableHead className="cursor-pointer select-none whitespace-nowrap text-xs" onClick={() => toggleSort("name")}>
                   Nome <SortIcon field="name" />
                 </TableHead>
-                <TableHead className="whitespace-nowrap">Hierarquias</TableHead>
-                <TableHead className="whitespace-nowrap">Funções</TableHead>
-                {isAdmin && <TableHead className="whitespace-nowrap">Email</TableHead>}
-                <TableHead className="whitespace-nowrap">Identidade</TableHead>
-                <TableHead
-                  className="cursor-pointer select-none whitespace-nowrap text-center"
-                  onClick={() => toggleSort("confirmed")}
-                >
-                  Confirmadas <SortIcon field="confirmed" />
+                <TableHead className="whitespace-nowrap text-xs">Hierarquias</TableHead>
+                <TableHead className="whitespace-nowrap text-xs">Funções</TableHead>
+                <TableHead className="cursor-pointer select-none whitespace-nowrap text-center text-xs" onClick={() => toggleSort("mes")}>
+                  Festas/mês <SortIcon field="mes" />
                 </TableHead>
-                <TableHead
-                  className="cursor-pointer select-none whitespace-nowrap text-center"
-                  onClick={() => toggleSort("history")}
-                >
-                  Histórico <SortIcon field="history" />
+                <TableHead className="cursor-pointer select-none whitespace-nowrap text-center text-xs" onClick={() => toggleSort("ano")}>
+                  Festas/ano <SortIcon field="ano" />
+                </TableHead>
+                <TableHead className="cursor-pointer select-none whitespace-nowrap text-center text-xs" onClick={() => toggleSort("inscricoes")}>
+                  Inscr./mês <SortIcon field="inscricoes" />
                 </TableHead>
                 {isAdmin && <TableHead className="w-10" />}
               </TableRow>
@@ -373,59 +417,38 @@ const MonitoresSection = () => {
               ) : (
                 filteredAndSorted.map((p) => (
                   <TableRow key={p.id}>
-                    <TableCell>
-                      <div className="font-medium text-foreground whitespace-nowrap">
-                        {p.display_name}
-                      </div>
-                      {p.nickname && (
-                        <div className="text-xs text-muted-foreground">@{p.nickname}</div>
-                      )}
+                    <TableCell className="py-2">
+                      <div className="text-xs font-medium text-foreground whitespace-nowrap">{p.display_name}</div>
+                      {p.nickname && <div className="text-[10px] text-muted-foreground">@{p.nickname}</div>}
                     </TableCell>
 
-                    <TableCell>
-                      <div className="flex flex-wrap gap-1">
-                        {(p.hierarchy_ids ?? []).map((id) => {
-                          const h = hierarchyById[id];
-                          return h ? (
-                            <span
-                              key={id}
-                              className="inline-flex items-center gap-0.5 rounded-full border border-primary/30 bg-primary/10 px-2 py-0.5 text-xs font-semibold text-primary whitespace-nowrap"
-                            >
-                              {h.emoji} {h.name}
-                            </span>
-                          ) : null;
-                        })}
+                    <TableCell className="py-2">
+                      <div className="flex flex-wrap gap-0.5">
+                        {(p.hierarchy_ids ?? []).map((id) => { const h = hierarchyById[id]; return h ? (
+                          <span key={id} className="inline-flex items-center gap-0.5 rounded-full border border-primary/30 bg-primary/10 px-1.5 py-0 text-[10px] font-semibold text-primary whitespace-nowrap">
+                            {h.emoji} {h.name}
+                          </span>) : null; })}
                       </div>
                     </TableCell>
 
-                    <TableCell>
-                      <div className="flex flex-wrap gap-1">
-                        {(p.role_ids ?? []).map((id) => {
-                          const r = roleById[id];
-                          return r ? (
-                            <span
-                              key={id}
-                              className="inline-flex items-center gap-0.5 rounded-full border border-secondary/30 bg-secondary/10 px-2 py-0.5 text-xs font-semibold text-secondary whitespace-nowrap"
-                            >
-                              {r.emoji} {r.name}
-                            </span>
-                          ) : null;
-                        })}
+                    <TableCell className="py-2">
+                      <div className="flex flex-wrap gap-0.5">
+                        {(p.role_ids ?? []).map((id) => { const r = roleById[id]; return r ? (
+                          <span key={id} className="inline-flex items-center gap-0.5 rounded-full border border-secondary/30 bg-secondary/10 px-1.5 py-0 text-[10px] font-semibold text-secondary whitespace-nowrap">
+                            {r.emoji} {r.name}
+                          </span>) : null; })}
                       </div>
                     </TableCell>
 
-                    {isAdmin && (
-                      <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
-                        {emails[p.id] ?? "—"}
-                      </TableCell>
-                    )}
-
-                    <TableCell className="font-mono text-xs text-muted-foreground whitespace-nowrap">
-                      {p.identity ?? "—"}
+                    <TableCell className="text-center text-xs font-semibold tabular-nums text-camp">
+                      {statsMap[p.id]?.mes ?? 0}
                     </TableCell>
-
-                    <TableCell className="text-center text-sm tabular-nums">0</TableCell>
-                    <TableCell className="text-center text-sm tabular-nums">0</TableCell>
+                    <TableCell className="text-center text-xs tabular-nums text-muted-foreground">
+                      {statsMap[p.id]?.ano ?? 0}
+                    </TableCell>
+                    <TableCell className="text-center text-xs tabular-nums text-primary">
+                      {statsMap[p.id]?.inscricoesMes ?? 0}
+                    </TableCell>
 
                     {isAdmin && (
                       <TableCell className="py-2">
