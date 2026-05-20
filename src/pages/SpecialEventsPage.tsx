@@ -93,7 +93,7 @@ const computePeriodHours = (start: string, end: string): string => {
 
 // ── Create Modal ──────────────────────────────────────────────────────────────
 
-interface CalEvent { id: string; title: string; event_date: string; end_date: string | null }
+interface CalEvent { id: string; title: string; event_date: string; end_date: string | null; type: string }
 interface CreateModalProps { onClose: () => void; onCreated: () => void }
 
 const CreateSpecialEventModal = ({ onClose, onCreated }: CreateModalProps) => {
@@ -106,12 +106,21 @@ const CreateSpecialEventModal = ({ onClose, onCreated }: CreateModalProps) => {
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
+    const today = new Date().toISOString().split("T")[0];
     supabase
       .from("events")
-      .select("id, title, event_date, end_date")
+      .select("id, title, event_date, end_date, type")
       .eq("is_deleted", false)
-      .order("event_date", { ascending: false })
-      .then(({ data }) => setCalEvents((data ?? []) as CalEvent[]));
+      .gte("event_date", today)
+      .order("event_date", { ascending: true })
+      .then(({ data }) => {
+        const list = (data ?? []) as CalEvent[];
+        const isBig = (e: CalEvent) => e.type === "camp" || /acampamento|gdc/i.test(e.title);
+        setCalEvents([
+          ...list.filter(isBig),
+          ...list.filter((e) => !isBig(e)),
+        ]);
+      });
   }, []);
 
   // Auto-fill when a calendar event is selected
@@ -157,9 +166,29 @@ const CreateSpecialEventModal = ({ onClose, onCreated }: CreateModalProps) => {
             <label className="block text-xs font-semibold text-muted-foreground mb-1">Vincular evento do calendário</label>
             <select value={eventId} onChange={(e) => setEventId(e.target.value)} className={`${inputCls} w-full`}>
               <option value="">— Nenhum —</option>
-              {calEvents.map((e) => (
-                <option key={e.id} value={e.id}>{e.title} ({fmtDate(e.event_date)})</option>
-              ))}
+              {(() => {
+                const isBig = (e: CalEvent) => e.type === "camp" || /acampamento|gdc/i.test(e.title);
+                const big = calEvents.filter(isBig);
+                const regular = calEvents.filter((e) => !isBig(e));
+                return (
+                  <>
+                    {big.length > 0 && (
+                      <optgroup label="⛺ Camps e Grandes">
+                        {big.map((e) => (
+                          <option key={e.id} value={e.id}>{e.title} ({fmtDate(e.event_date)})</option>
+                        ))}
+                      </optgroup>
+                    )}
+                    {regular.length > 0 && (
+                      <optgroup label="🎉 Outros eventos">
+                        {regular.map((e) => (
+                          <option key={e.id} value={e.id}>{e.title} ({fmtDate(e.event_date)})</option>
+                        ))}
+                      </optgroup>
+                    )}
+                  </>
+                );
+              })()}
             </select>
           </div>
           <div>
