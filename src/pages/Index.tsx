@@ -251,7 +251,7 @@ const Index = () => {
 
   const pastEvents = applyFilters(getFilteredByTime(activeEvents.filter((e) => getEffectiveDate(e) < today)));
 
-  const baseFutureOpen = activeEvents.filter((e) => getEffectiveDate(e) >= today && !(e.is_locked && e.monitors.some((m) => m.is_confirmed)));
+  const baseFutureOpen = activeEvents.filter((e) => getEffectiveDate(e) >= today);
   const baseFutureFinalized = activeEvents.filter((e) => getEffectiveDate(e) >= today && e.is_locked && e.monitors.some((m) => m.is_confirmed));
 
   const futureOpen = applyFilters(getFilteredByTime(

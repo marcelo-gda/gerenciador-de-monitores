@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
-import { ArrowLeft, User, Trophy, Calendar, Clock, MapPin, Copy, Check, KeyRound, Pencil } from "lucide-react";
+import { ArrowLeft, User, Calendar, Clock, MapPin, Copy, Check, KeyRound, Pencil } from "lucide-react";
 import AppNavbar from "@/components/AppNavbar";
 import { motion, AnimatePresence } from "framer-motion";
 import { useAuth } from "@/contexts/AuthContext";
@@ -137,7 +137,24 @@ const ProfilePage = () => {
     fetchHistory();
   }, [user]);
 
-  const confirmedCount = history.filter((h) => h.is_confirmed).length;
+  const now = new Date();
+  const currentMonth = now.getMonth();
+  const currentYear = now.getFullYear();
+
+  const festasMes = history.filter((h) => {
+    const d = new Date(h.event_date + "T12:00:00");
+    return h.is_confirmed && d.getMonth() === currentMonth && d.getFullYear() === currentYear;
+  }).length;
+
+  const festasAno = history.filter((h) => {
+    const d = new Date(h.event_date + "T12:00:00");
+    return h.is_confirmed && d.getFullYear() === currentYear;
+  }).length;
+
+  const inscricoesMes = history.filter((h) => {
+    const d = new Date(h.event_date + "T12:00:00");
+    return d.getMonth() === currentMonth && d.getFullYear() === currentYear;
+  }).length;
 
   const levelCounts: Record<string, number> = {};
   history.forEach((h) => {
@@ -250,16 +267,21 @@ const ProfilePage = () => {
         </div>
 
         {/* Stats */}
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-3 gap-3">
           <div className="rounded-lg border-2 border-border bg-card p-4 text-center">
-            <Trophy className="mx-auto mb-1 h-6 w-6 text-secondary" />
-            <p className="font-display text-2xl font-bold text-foreground">{confirmedCount}</p>
-            <p className="text-xs text-muted-foreground">Festas Confirmadas</p>
+            <Calendar className="mx-auto mb-1 h-5 w-5 text-camp" />
+            <p className="font-display text-2xl font-bold text-foreground">{festasMes}</p>
+            <p className="text-xs text-muted-foreground">Festas no mês</p>
           </div>
           <div className="rounded-lg border-2 border-border bg-card p-4 text-center">
-            <Calendar className="mx-auto mb-1 h-6 w-6 text-primary" />
-            <p className="font-display text-2xl font-bold text-foreground">{history.length}</p>
-            <p className="text-xs text-muted-foreground">Total de Inscrições</p>
+            <Calendar className="mx-auto mb-1 h-5 w-5 text-secondary" />
+            <p className="font-display text-2xl font-bold text-foreground">{festasAno}</p>
+            <p className="text-xs text-muted-foreground">Festas no ano</p>
+          </div>
+          <div className="rounded-lg border-2 border-border bg-card p-4 text-center">
+            <Calendar className="mx-auto mb-1 h-5 w-5 text-primary" />
+            <p className="font-display text-2xl font-bold text-foreground">{inscricoesMes}</p>
+            <p className="text-xs text-muted-foreground">Inscr./mês</p>
           </div>
         </div>
 

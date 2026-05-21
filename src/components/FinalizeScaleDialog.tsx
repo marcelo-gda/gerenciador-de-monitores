@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
-import { X, CheckCircle2, Circle } from "lucide-react";
+import { X, CheckCircle2, Circle, Save } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
@@ -22,12 +22,22 @@ const levelColors: Record<string, string> = {
   trainee: "bg-muted text-muted-foreground border-border",
 };
 
+interface Role {
+  id: string;
+  emoji: string;
+  name: string;
+  slug: string;
+  sort_order: number;
+}
+
 interface Monitor {
   id: string;
   user_id: string;
   display_name: string;
+  nickname?: string | null;
   is_confirmed?: boolean;
   level?: string | null;
+  bonus_tags?: string[];
 }
 
 interface Props {
@@ -42,6 +52,8 @@ const FinalizeScaleDialog = ({ eventId, eventTitle, monitors, onClose, onFinaliz
   const { user } = useAuth();
   const [hierarchies, setHierarchies] = useState<Hierarchy[]>([]);
   const [saving, setSaving] = useState(false);
+  const [savingDraft, setSavingDraft] = useState(false);
+  const [roles, setRoles] = useState<Role[]>([]);
 
   // Quais monitores estão selecionados para escalar
   const [selected, setSelected] = useState<Set<string>>(() => {
@@ -57,14 +69,25 @@ const FinalizeScaleDialog = ({ eventId, eventTitle, monitors, onClose, onFinaliz
     return initial;
   });
 
+  const [bonusTags, setBonusTags] = useState<Record<string, string>>(() => {
+    const initial: Record<string, string> = {};
+    monitors.forEach((m) => {
+      if (m.bonus_tags && m.bonus_tags.length > 0) initial[m.user_id] = m.bonus_tags[0];
+    });
+    return initial;
+  });
+
   useEffect(() => {
     supabase
       .from("hierarchies")
       .select("id, emoji, name, slug, sort_order")
       .order("sort_order", { ascending: true })
-      .then(({ data }) => {
-        if (data) setHierarchies(data as Hierarchy[]);
-      });
+      .then(({ data }) => { if (data) setHierarchies(data as Hierarchy[]); });
+    supabase
+      .from("roles")
+      .select("id, emoji, name, slug")
+      .order("sort_order", { ascending: true })
+      .then(({ data }) => { if (data) setRoles(data as Role[]); });
   }, []);
 
   const toggleMonitor = (userId: string) => {
@@ -78,55 +101,48 @@ const FinalizeScaleDialog = ({ eventId, eventTitle, monitors, onClose, onFinaliz
 
   const selectedMonitors = monitors.filter((m) => selected.has(m.user_id));
 
-  const handleFinalize = async () => {
-    const missingLevel = selectedMonitors.some((m) => !levels[m.user_id]);
-    if (missingLevel) {
-      toast.error("Defina o cargo de todos os monitores escalados");
-      return;
-    }
-    if (selectedMonitors.length === 0) {
-      toast.error("Selecione ao menos um monitor para escalar");
-      return;
+  const saveChanges = async (lock: boolean) => {
+    if (lock) {
+      if (selectedMonitors.length === 0) { toast.error("Selecione ao menos um monitor para escalar"); return; }
+      const missingLevel = selectedMonitors.some((m) => !levels[m.user_id]);
+      if (missingLevel) { toast.error("Defina o cargo de todos os monitores escalados"); return; }
     }
 
-    setSaving(true);
+    lock ? setSaving(true) : setSavingDraft(true);
 
-    // Reseta is_confirmed de todos os monitores do evento
-    await supabase
-      .from("event_monitors")
-      .update({ is_confirmed: false })
-      .eq("event_id", eventId);
+    await supabase.from("event_monitors").update({ is_confirmed: false }).eq("event_id", eventId);
 
-    // Confirma e salva cargo dos selecionados
     for (const m of selectedMonitors) {
       await supabase
         .from("event_monitors")
-        .update({ is_confirmed: true, level: levels[m.user_id] })
+        .update({
+          is_confirmed: true,
+          level: levels[m.user_id] || null,
+          bonus_tags: bonusTags[m.user_id] ? [bonusTags[m.user_id]] : [],
+        })
         .eq("event_id", eventId)
         .eq("user_id", m.user_id);
     }
 
-    // Trava o evento
-    await supabase.from("events").update({ is_locked: true }).eq("id", eventId);
-
-    // Notifica os escalados
-    if (user) {
-      const hierarchyLabel = (slug: string) => {
-        const h = hierarchies.find((h) => h.slug === slug);
-        return h ? `${h.emoji} ${h.name}` : slug;
-      };
-      const notifications = selectedMonitors.map((m) => ({
-        sender_id: user.id,
-        recipient_id: m.user_id,
-        content: `✅ Você foi escalado(a) para "${eventTitle}" como ${hierarchyLabel(levels[m.user_id])}! Confira os detalhes na escala.`,
-      }));
-      await supabase.from("messages").insert(notifications);
+    if (lock) {
+      await supabase.from("events").update({ is_locked: true }).eq("id", eventId);
+      if (user) {
+        const hierarchyLabel = (slug: string) => { const h = hierarchies.find((h) => h.slug === slug); return h ? `${h.emoji} ${h.name}` : slug; };
+        const notifications = selectedMonitors.map((m) => ({
+          sender_id: user.id,
+          recipient_id: m.user_id,
+          content: `✅ Você foi escalado(a) para "${eventTitle}" como ${hierarchyLabel(levels[m.user_id])}! Confira os detalhes na escala.`,
+        }));
+        await supabase.from("messages").insert(notifications);
+      }
+      toast.success("Escala finalizada com sucesso!");
+    } else {
+      toast.success("✅ Escala salva!");
     }
 
-    toast.success("Escala finalizada com sucesso!");
-    setSaving(false);
+    lock ? setSaving(false) : setSavingDraft(false);
     onFinalized();
-    onClose();
+    if (lock) onClose();
   };
 
   return (
@@ -164,43 +180,50 @@ const FinalizeScaleDialog = ({ eventId, eventTitle, monitors, onClose, onFinaliz
             return (
               <div
                 key={m.user_id}
-                className={`flex items-center gap-3 rounded-lg border-2 p-3 transition-all cursor-pointer ${
-                  isSelected
-                    ? "border-camp bg-camp/10"
-                    : "border-border bg-background hover:border-border/80"
+                className={`rounded-lg border-2 p-3 transition-all ${
+                  isSelected ? "border-camp bg-camp/10" : "border-border bg-background hover:border-border/80"
                 }`}
-                onClick={() => toggleMonitor(m.user_id)}
               >
-                {isSelected ? (
-                  <CheckCircle2 className="h-5 w-5 text-camp shrink-0" />
-                ) : (
-                  <Circle className="h-5 w-5 text-muted-foreground/40 shrink-0" />
-                )}
-                <span className={`text-sm font-medium flex-1 min-w-0 truncate ${isSelected ? "text-foreground" : "text-muted-foreground"}`}>
-                  {m.display_name}
-                </span>
-                {isSelected && (
-                  <select
-                    value={levels[m.user_id] || ""}
-                    onChange={(e) => {
-                      e.stopPropagation();
-                      setLevels({ ...levels, [m.user_id]: e.target.value as MonitorLevel });
-                    }}
-                    onClick={(e) => e.stopPropagation()}
-                    className={`shrink-0 rounded-full px-2 py-1 text-xs font-semibold outline-none border ${
-                      levels[m.user_id]
-                        ? levelColors[levels[m.user_id]]
-                        : "border-destructive/50 bg-destructive/5 text-destructive"
-                    }`}
-                  >
-                    <option value="">Cargo...</option>
-                    {hierarchies.map((h) => (
-                      <option key={h.id} value={h.slug}>
-                        {h.emoji} {h.name}
-                      </option>
-                    ))}
-                  </select>
-                )}
+                <div className="flex items-center gap-3 cursor-pointer" onClick={() => toggleMonitor(m.user_id)}>
+                  {isSelected ? (
+                    <CheckCircle2 className="h-5 w-5 text-camp shrink-0" />
+                  ) : (
+                    <Circle className="h-5 w-5 text-muted-foreground/40 shrink-0" />
+                  )}
+                  <span className={`text-sm font-medium flex-1 min-w-0 truncate ${isSelected ? "text-foreground" : "text-muted-foreground"}`}>
+                    {m.nickname || m.display_name}
+                  </span>
+                  {isSelected && (
+                    <>
+                      <select
+                        value={levels[m.user_id] || ""}
+                        onChange={(e) => { e.stopPropagation(); setLevels({ ...levels, [m.user_id]: e.target.value as MonitorLevel }); }}
+                        onClick={(e) => e.stopPropagation()}
+                        className={`shrink-0 rounded-md px-2 py-1 text-xs font-semibold outline-none border cursor-pointer ${
+                          levels[m.user_id] ? levelColors[levels[m.user_id]] : "border-border bg-background text-muted-foreground"
+                        }`}
+                      >
+                        <option value="">Cargo...</option>
+                        {hierarchies.map((h) => (
+                          <option key={h.id} value={h.slug}>{h.emoji} {h.name}</option>
+                        ))}
+                      </select>
+                      {roles.length > 0 && (
+                        <select
+                          value={bonusTags[m.user_id] || ""}
+                          onChange={(e) => { e.stopPropagation(); setBonusTags({ ...bonusTags, [m.user_id]: e.target.value }); }}
+                          onClick={(e) => e.stopPropagation()}
+                          className="shrink-0 rounded-md px-2 py-1 text-xs font-semibold outline-none border border-border bg-background text-muted-foreground cursor-pointer"
+                        >
+                          <option value="">Função...</option>
+                          {roles.map((r) => (
+                            <option key={r.id} value={r.slug}>{r.emoji} {r.name}</option>
+                          ))}
+                        </select>
+                      )}
+                    </>
+                  )}
+                </div>
               </div>
             );
           })}
@@ -208,18 +231,23 @@ const FinalizeScaleDialog = ({ eventId, eventTitle, monitors, onClose, onFinaliz
 
         {/* Footer */}
         <div className="flex gap-2 border-t border-border p-5">
-          <button
-            onClick={onClose}
-            className="flex-1 rounded-lg border border-border px-4 py-2 text-sm font-semibold text-muted-foreground hover:bg-muted"
-          >
+          <button onClick={onClose} className="rounded-lg border border-border px-3 py-2 text-sm font-semibold text-muted-foreground hover:bg-muted">
             Cancelar
           </button>
           <button
-            onClick={handleFinalize}
-            disabled={saving || selectedMonitors.length === 0}
-            className="flex-1 rounded-lg bg-camp px-4 py-2 text-sm font-semibold text-primary-foreground hover:opacity-90 disabled:opacity-50"
+            onClick={() => saveChanges(false)}
+            disabled={savingDraft}
+            className="flex items-center gap-1.5 rounded-lg border border-primary/30 bg-primary/10 px-3 py-2 text-sm font-semibold text-primary hover:bg-primary/20 disabled:opacity-50"
           >
-            {saving ? "Salvando..." : `Escalar ${selectedMonitors.length > 0 ? `(${selectedMonitors.length})` : ""}`}
+            <Save className="h-3.5 w-3.5" />
+            {savingDraft ? "Salvando..." : "Salvar"}
+          </button>
+          <button
+            onClick={() => saveChanges(true)}
+            disabled={saving || selectedMonitors.length === 0}
+            className="flex-1 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
+          >
+            {saving ? "Finalizando..." : `Finalizar${selectedMonitors.length > 0 ? ` (${selectedMonitors.length})` : ""}`}
           </button>
         </div>
       </motion.div>

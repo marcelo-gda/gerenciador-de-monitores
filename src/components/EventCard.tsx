@@ -114,6 +114,14 @@ const EventCard = ({ event, onRefresh }: EventCardProps) => {
   const [preSelected, setPreSelected] = useState<Set<string>>(() => {
     return new Set(event.monitors.filter((m) => m.is_confirmed).map((m) => m.user_id));
   });
+  const [hierarchies, setHierarchies] = useState<{id:string;emoji:string;name:string;slug:string}[]>([]);
+  const [roles, setRoles] = useState<{id:string;emoji:string;name:string;slug:string}[]>([]);
+
+  useEffect(() => {
+    if (!isAdmin) return;
+    supabase.from("hierarchies").select("id, emoji, name, slug, sort_order").order("sort_order").then(({ data }) => { if (data) setHierarchies(data as any); });
+    supabase.from("roles").select("id, emoji, name, slug, sort_order").order("sort_order").then(({ data }) => { if (data) setRoles(data as any); });
+  }, [isAdmin]);
 
   useEffect(() => {
     setLocalMonitors(event.monitors);
@@ -133,6 +141,16 @@ const EventCard = ({ event, onRefresh }: EventCardProps) => {
   const canLeave = !!user && !event.is_locked && isUserInEvent && !isPastEvent && !isComingSoon;
   const hasConfirmed = localMonitors.some((m) => m.is_confirmed);
   const isFinalized = event.is_locked && hasConfirmed;
+
+  const handleInlineLevelChange = async (userId: string, level: string) => {
+    await supabase.from("event_monitors").update({ level: level || null }).eq("event_id", event.id).eq("user_id", userId);
+    onRefresh();
+  };
+
+  const handleInlineTagChange = async (userId: string, tag: string) => {
+    await supabase.from("event_monitors").update({ bonus_tags: tag ? [tag] : [] }).eq("event_id", event.id).eq("user_id", userId);
+    onRefresh();
+  };
 
   const togglePreSelect = async (userId: string) => {
     const next = new Set(preSelected);
@@ -239,6 +257,9 @@ const EventCard = ({ event, onRefresh }: EventCardProps) => {
                 )}
                 {event.is_locked && !isFinalized && <Lock className="ml-2 inline h-4 w-4 text-destructive" />}
               </h3>
+              <p className="mt-0.5 flex items-center gap-1 text-xs text-muted-foreground truncate">
+                <MapPin className="h-3 w-3 shrink-0" />{event.address}
+              </p>
             </button>
           </div>
 
@@ -263,9 +284,13 @@ const EventCard = ({ event, onRefresh }: EventCardProps) => {
         </div>
 
         {/* Meta */}
-        <div className="mb-3 flex flex-wrap gap-3 text-sm text-muted-foreground">
-          <span className="flex items-center gap-1"><Clock className="h-3.5 w-3.5" />{event.start_time} | {event.end_time}</span>
-          <span className="flex items-center gap-1"><MapPin className="h-3.5 w-3.5" />{event.address}</span>
+        <div className="mb-3 flex flex-wrap gap-2 text-sm text-muted-foreground">
+          <span className="flex items-center gap-1">
+            <Clock className="h-3.5 w-3.5" />
+            {new Date(event.event_date + "T12:00:00").toLocaleDateString("pt-BR", { day: "numeric", month: "numeric" })}
+            {event.end_date && event.end_date !== event.event_date && <> — {new Date(event.end_date + "T12:00:00").toLocaleDateString("pt-BR", { day: "numeric", month: "numeric" })}</>}
+            {" · "}{event.start_time} | {event.end_time}
+          </span>
         </div>
 
         {/* Observações (visível para todos) */}
@@ -329,19 +354,50 @@ const EventCard = ({ event, onRefresh }: EventCardProps) => {
                   ) : (
                     getShortName(monitor.display_name, monitor.nickname)
                   )}
-                  {monitor.bonus_tags && monitor.bonus_tags.length > 0 && (
-                    <span className="ml-0.5 text-xs">
-                      {monitor.bonus_tags.map((tag) => {
-                        const emoji = tag === "protagonista" ? "🅿️" : tag === "midia" ? "🎥" : tag === "cronista" ? "📜" : "";
-                        return emoji;
-                      }).join("")}
-                    </span>
-                  )}
-                  {confirmed && monitor.level && (
-                    <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-bold ${levelColors[monitor.level] || ""}`}>
-                      {levelLabels[monitor.level] || monitor.level}
-                    </span>
-                  )}
+                  {confirmed && isAdmin && !isPastEvent ? (
+                    <>
+                      <select
+                        value={monitor.level || ""}
+                        onChange={(e) => { e.stopPropagation(); handleInlineLevelChange(monitor.user_id, e.target.value); }}
+                        onClick={(e) => e.stopPropagation()}
+                        className={`rounded-md px-1.5 py-0.5 text-[10px] font-bold outline-none border cursor-pointer ${monitor.level ? levelColors[monitor.level] : "border-border bg-background text-muted-foreground"}`}
+                      >
+                        <option value="">Cargo...</option>
+                        {hierarchies.map((h) => (
+                          <option key={h.id} value={h.slug}>{h.emoji} {h.name}</option>
+                        ))}
+                      </select>
+                      {roles.length > 0 && (
+                        <select
+                          value={(monitor.bonus_tags || [])[0] || ""}
+                          onChange={(e) => { e.stopPropagation(); handleInlineTagChange(monitor.user_id, e.target.value); }}
+                          onClick={(e) => e.stopPropagation()}
+                          className="rounded-md px-1.5 py-0.5 text-[10px] font-bold outline-none border border-border bg-background text-muted-foreground cursor-pointer"
+                        >
+                          <option value="">Função...</option>
+                          {roles.map((r) => (
+                            <option key={r.id} value={r.slug}>{r.emoji} {r.name}</option>
+                          ))}
+                        </select>
+                      )}
+                    </>
+                  ) : confirmed ? (
+                    <>
+                      {monitor.level && (
+                        <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-bold ${levelColors[monitor.level] || ""}`}>
+                          {levelLabels[monitor.level] || monitor.level}
+                        </span>
+                      )}
+                      {monitor.bonus_tags && monitor.bonus_tags.length > 0 && (
+                        <span className="text-xs">
+                          {monitor.bonus_tags.map((tag) => {
+                            const emoji = tag === "protagonista" ? "🅿️" : tag === "midia" ? "🎥" : tag === "cronista" ? "📜" : "";
+                            return emoji;
+                          }).join("")}
+                        </span>
+                      )}
+                    </>
+                  ) : null}
                   {!event.is_locked && !isPastEvent && monitor.user_id === user?.id && (
                     <button
                       onClick={handleLeave}
