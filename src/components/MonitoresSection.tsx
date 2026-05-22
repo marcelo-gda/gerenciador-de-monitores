@@ -38,7 +38,7 @@ interface EditForm {
   role_ids: string[];
 }
 
-type SortField = "name";
+type SortField = "name" | "insc_mes" | "insc_semana" | "festas_mes" | "festas_ano";
 type SortDir = "asc" | "desc";
 
 const MonitoresSection = () => {
@@ -269,11 +269,19 @@ const MonitoresSection = () => {
         roleFilter.some((id) => (p.role_ids ?? []).includes(id))
       );
     result.sort((a, b) => {
-      const cmp = a.display_name.localeCompare(b.display_name, "pt-BR");
-      return sortDir === "asc" ? cmp : -cmp;
+      if (sortField === "name") {
+        const cmp = a.display_name.localeCompare(b.display_name, "pt-BR");
+        return sortDir === "asc" ? cmp : -cmp;
+      }
+      let valA = 0, valB = 0;
+      if (sortField === "insc_mes")    { valA = inscStats[a.id]?.mes ?? 0;    valB = inscStats[b.id]?.mes ?? 0; }
+      if (sortField === "insc_semana") { valA = inscStats[a.id]?.semana ?? 0; valB = inscStats[b.id]?.semana ?? 0; }
+      if (sortField === "festas_mes")  { valA = adminStats[a.id]?.mes ?? 0;   valB = adminStats[b.id]?.mes ?? 0; }
+      if (sortField === "festas_ano")  { valA = adminStats[a.id]?.ano ?? 0;   valB = adminStats[b.id]?.ano ?? 0; }
+      return sortDir === "asc" ? valA - valB : valB - valA;
     });
     return result;
-  }, [profiles, search, hierarchyFilter, roleFilter, sortDir]);
+  }, [profiles, search, hierarchyFilter, roleFilter, sortField, sortDir, inscStats, adminStats]);
 
   const SortIcon = ({ field }: { field: SortField }) => {
     if (sortField !== field)
@@ -414,12 +422,20 @@ const MonitoresSection = () => {
                 <TableHead className="whitespace-nowrap text-xs">Funções</TableHead>
                 {isAdmin && (
                   <>
-                    <TableHead className="whitespace-nowrap text-center text-xs">Festas/mês</TableHead>
-                    <TableHead className="whitespace-nowrap text-center text-xs">Festas/ano</TableHead>
+                    <TableHead className="cursor-pointer select-none whitespace-nowrap text-center" onClick={() => toggleSort("festas_mes")}>
+                      Festas/mês <SortIcon field="festas_mes" />
+                    </TableHead>
+                    <TableHead className="cursor-pointer select-none whitespace-nowrap text-center" onClick={() => toggleSort("festas_ano")}>
+                      Festas/ano <SortIcon field="festas_ano" />
+                    </TableHead>
                   </>
                 )}
-                <TableHead className="whitespace-nowrap text-center text-xs">Inscr./mês</TableHead>
-                <TableHead className="whitespace-nowrap text-center text-xs">Inscr./semana</TableHead>
+                <TableHead className="cursor-pointer select-none whitespace-nowrap text-center" onClick={() => toggleSort("insc_mes")}>
+                  Inscr./mês <SortIcon field="insc_mes" />
+                </TableHead>
+                <TableHead className="cursor-pointer select-none whitespace-nowrap text-center" onClick={() => toggleSort("insc_semana")}>
+                  Inscr./semana <SortIcon field="insc_semana" />
+                </TableHead>
                 {isAdmin && <TableHead className="w-10" />}
               </TableRow>
             </TableHeader>
