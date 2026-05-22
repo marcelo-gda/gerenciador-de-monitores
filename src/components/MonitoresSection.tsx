@@ -1,7 +1,8 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Pencil, Search, X, ChevronUp, ChevronDown, ChevronsUpDown } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
+import MonitorProfileModal from "@/components/MonitorProfileModal";
 import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
 import {
@@ -37,11 +38,12 @@ interface EditForm {
   role_ids: string[];
 }
 
-type SortField = "name" | "mes" | "ano" | "inscricoes";
+type SortField = "name";
 type SortDir = "asc" | "desc";
 
 const MonitoresSection = () => {
   const { isAdmin } = useAuth();
+  const [viewingMonitorId, setViewingMonitorId] = useState<string | null>(null);
   const qc = useQueryClient();
 
   const [search, setSearch] = useState("");
@@ -54,7 +56,6 @@ const MonitoresSection = () => {
   const [editForm, setEditForm] = useState<EditForm>({
     nickname: "", identity: "", hierarchy_ids: [], role_ids: [],
   });
-  const [emails, setEmails] = useState<Record<string, string>>({});
 
   // ── Queries ───────────────────────────────────────────────────────────────
 
@@ -95,54 +96,98 @@ const MonitoresSection = () => {
     },
   });
 
-  const { data: monitorStats = [] } = useQuery({
-    queryKey: ["monitor-stats"],
+  const { data: inscStats = {} } = useQuery({
+    queryKey: ["monitors-insc-stats"],
     queryFn: async () => {
-      const yearStart = `${new Date().getFullYear()}-01-01`;
+      const now = new Date();
+      const year = now.getFullYear();
+      const month = now.getMonth() + 1;
+      const monthStart = `${year}-${String(month).padStart(2, "0")}-01`;
+      const nextMonth = month === 12
+        ? `${year + 1}-01-01`
+        : `${year}-${String(month + 1).padStart(2, "0")}-01`;
+      const day = now.getDay();
+      const weekStart = new Date(now);
+      weekStart.setDate(now.getDate() - day);
+      const weekEnd = new Date(weekStart);
+      weekEnd.setDate(weekStart.getDate() + 6);
+      const weekStartStr = weekStart.toISOString().split("T")[0];
+      const weekEndStr = weekEnd.toISOString().split("T")[0];
 
-      const { data: eventsData } = await supabase
+      const { data: monthEvents } = await supabase
         .from("events")
         .select("id, event_date")
-        .eq("is_deleted", false)
-        .gte("event_date", yearStart);
+        .gte("event_date", monthStart)
+        .lt("event_date", nextMonth);
 
-      const eventDateMap = Object.fromEntries(
-        (eventsData ?? []).map((e: any) => [e.id, e.event_date as string])
+      if (!monthEvents?.length) return {};
+
+      const eventIds = monthEvents.map((e: any) => e.id);
+      const weekEventIds = new Set(
+        monthEvents
+          .filter((e: any) => e.event_date >= weekStartStr && e.event_date <= weekEndStr)
+          .map((e: any) => e.id)
       );
-      const validEventIds = new Set(Object.keys(eventDateMap));
 
-      if (validEventIds.size === 0) return [];
-
-      const { data: emData, error } = await supabase
+      const { data } = await supabase
         .from("event_monitors")
-        .select("user_id, is_confirmed, event_id")
-        .in("event_id", [...validEventIds]);
+        .select("user_id, event_id")
+        .in("event_id", eventIds);
 
-      if (error) throw error;
-
-      return (emData ?? []).map((m: any) => ({
-        user_id: m.user_id as string,
-        is_confirmed: m.is_confirmed as boolean,
-        event_date: eventDateMap[m.event_id] ?? null,
-      })).filter((m) => m.event_date !== null);
+      const stats: Record<string, { mes: number; semana: number }> = {};
+      (data ?? []).forEach((row: any) => {
+        if (!stats[row.user_id]) stats[row.user_id] = { mes: 0, semana: 0 };
+        stats[row.user_id].mes += 1;
+        if (weekEventIds.has(row.event_id)) stats[row.user_id].semana += 1;
+      });
+      return stats;
     },
   });
 
-  // Fetch emails via RPC (admin only)
-  useEffect(() => {
-    if (!isAdmin) return;
-    supabase
-      .rpc("get_profile_emails")
-      .then(({ data }) => {
-        if (!data) return;
-        const map: Record<string, string> = {};
-        (data as { user_id: string; email: string }[]).forEach((r) => {
-          map[r.user_id] = r.email;
-        });
-        setEmails(map);
-      })
-      .then(undefined, () => {});
-  }, [isAdmin]);
+  const { data: adminStats = {} } = useQuery({
+    queryKey: ["monitors-admin-stats"],
+    enabled: isAdmin,
+    queryFn: async () => {
+      const now = new Date();
+      const year = now.getFullYear();
+      const yearStart = `${year}-01-01`;
+      const nextYear = `${year + 1}-01-01`;
+      const month = now.getMonth() + 1;
+      const monthStart = `${year}-${String(month).padStart(2, "0")}-01`;
+      const nextMonth = month === 12
+        ? `${year + 1}-01-01`
+        : `${year}-${String(month + 1).padStart(2, "0")}-01`;
+
+      const { data: yearEvents } = await supabase
+        .from("events")
+        .select("id, event_date")
+        .gte("event_date", yearStart)
+        .lt("event_date", nextYear);
+
+      if (!yearEvents?.length) return {};
+
+      const yearEventIds = yearEvents.map((e: any) => e.id);
+      const monthEventIds = new Set(
+        yearEvents
+          .filter((e: any) => e.event_date >= monthStart && e.event_date < nextMonth)
+          .map((e: any) => e.id)
+      );
+
+      const { data } = await supabase
+        .from("event_monitors")
+        .select("user_id, event_id")
+        .eq("is_confirmed", true)
+        .in("event_id", yearEventIds);
+
+      const stats: Record<string, { mes: number; ano: number }> = {};
+      (data ?? []).forEach((row: any) => {
+        if (!stats[row.user_id]) stats[row.user_id] = { mes: 0, ano: 0 };
+        stats[row.user_id].ano += 1;
+        if (monthEventIds.has(row.event_id)) stats[row.user_id].mes += 1;
+      });
+      return stats;
+    },
+  });
 
   // ── Mutation ──────────────────────────────────────────────────────────────
 
@@ -205,27 +250,6 @@ const MonitoresSection = () => {
   const hierarchyById = Object.fromEntries(hierarchies.map((h) => [h.id, h]));
   const roleById = Object.fromEntries(specialRoles.map((r) => [r.id, r]));
 
-  const now = new Date();
-  const thisMonth = now.getMonth();
-  const thisYear = now.getFullYear();
-
-  const statsMap = useMemo(() => {
-    const map: Record<string, { mes: number; ano: number; inscricoesMes: number }> = {};
-    for (const entry of monitorStats) {
-      const { event_date, user_id, is_confirmed } = entry as any;
-      if (!event_date) continue;
-      const [, mStr] = event_date.split("-");
-      const eventMonth = parseInt(mStr, 10) - 1;
-      if (!map[user_id]) map[user_id] = { mes: 0, ano: 0, inscricoesMes: 0 };
-      if (is_confirmed) map[user_id].ano++;
-      if (eventMonth === thisMonth) {
-        if (is_confirmed) map[user_id].mes++;
-        map[user_id].inscricoesMes++;
-      }
-    }
-    return map;
-  }, [monitorStats, thisMonth]);
-
   const filteredAndSorted = useMemo(() => {
     let result = [...profiles];
     if (search.trim()) {
@@ -245,18 +269,11 @@ const MonitoresSection = () => {
         roleFilter.some((id) => (p.role_ids ?? []).includes(id))
       );
     result.sort((a, b) => {
-      if (sortField === "name") {
-        const cmp = a.display_name.localeCompare(b.display_name, "pt-BR");
-        return sortDir === "asc" ? cmp : -cmp;
-      }
-      const sa = statsMap[a.id] ?? { mes: 0, ano: 0, inscricoesMes: 0 };
-      const sb = statsMap[b.id] ?? { mes: 0, ano: 0, inscricoesMes: 0 };
-      const key = sortField === "mes" ? "mes" : sortField === "ano" ? "ano" : "inscricoesMes";
-      const cmp = sa[key] - sb[key];
+      const cmp = a.display_name.localeCompare(b.display_name, "pt-BR");
       return sortDir === "asc" ? cmp : -cmp;
     });
     return result;
-  }, [profiles, search, hierarchyFilter, roleFilter, sortField, sortDir, statsMap]);
+  }, [profiles, search, hierarchyFilter, roleFilter, sortDir]);
 
   const SortIcon = ({ field }: { field: SortField }) => {
     if (sortField !== field)
@@ -266,7 +283,7 @@ const MonitoresSection = () => {
       : <ChevronDown className="ml-1 inline-block h-3 w-3" />;
   };
 
-  const colSpan = isAdmin ? 7 : 6;
+  const colSpan = isAdmin ? 8 : 5;
 
   // ── Render ────────────────────────────────────────────────────────────────
 
@@ -395,15 +412,14 @@ const MonitoresSection = () => {
                 </TableHead>
                 <TableHead className="whitespace-nowrap text-xs">Hierarquias</TableHead>
                 <TableHead className="whitespace-nowrap text-xs">Funções</TableHead>
-                <TableHead className="cursor-pointer select-none whitespace-nowrap text-center text-xs" onClick={() => toggleSort("mes")}>
-                  Festas/mês <SortIcon field="mes" />
-                </TableHead>
-                <TableHead className="cursor-pointer select-none whitespace-nowrap text-center text-xs" onClick={() => toggleSort("ano")}>
-                  Festas/ano <SortIcon field="ano" />
-                </TableHead>
-                <TableHead className="cursor-pointer select-none whitespace-nowrap text-center text-xs" onClick={() => toggleSort("inscricoes")}>
-                  Inscr./mês <SortIcon field="inscricoes" />
-                </TableHead>
+                {isAdmin && (
+                  <>
+                    <TableHead className="whitespace-nowrap text-center text-xs">Festas/mês</TableHead>
+                    <TableHead className="whitespace-nowrap text-center text-xs">Festas/ano</TableHead>
+                  </>
+                )}
+                <TableHead className="whitespace-nowrap text-center text-xs">Inscr./mês</TableHead>
+                <TableHead className="whitespace-nowrap text-center text-xs">Inscr./semana</TableHead>
                 {isAdmin && <TableHead className="w-10" />}
               </TableRow>
             </TableHeader>
@@ -418,8 +434,20 @@ const MonitoresSection = () => {
                 filteredAndSorted.map((p) => (
                   <TableRow key={p.id}>
                     <TableCell className="py-2">
-                      <div className="text-xs font-medium text-foreground whitespace-nowrap">{p.display_name}</div>
-                      {p.nickname && <div className="text-[10px] text-muted-foreground">@{p.nickname}</div>}
+                      {isAdmin ? (
+                        <button
+                          onClick={() => setViewingMonitorId(p.id)}
+                          className="text-left hover:text-primary hover:underline underline-offset-2 transition-colors"
+                        >
+                          <div className="text-xs font-medium text-foreground whitespace-nowrap">{p.display_name}</div>
+                          {p.nickname && <div className="text-[10px] text-muted-foreground">@{p.nickname}</div>}
+                        </button>
+                      ) : (
+                        <div>
+                          <div className="text-xs font-medium text-foreground whitespace-nowrap">{p.display_name}</div>
+                          {p.nickname && <div className="text-[10px] text-muted-foreground">@{p.nickname}</div>}
+                        </div>
+                      )}
                     </TableCell>
 
                     <TableCell className="py-2">
@@ -440,14 +468,22 @@ const MonitoresSection = () => {
                       </div>
                     </TableCell>
 
-                    <TableCell className="text-center text-xs font-semibold tabular-nums text-camp">
-                      {statsMap[p.id]?.mes ?? 0}
+                    {isAdmin && (
+                      <>
+                        <TableCell className="text-center text-xs tabular-nums">
+                          {adminStats[p.id]?.mes ?? 0}
+                        </TableCell>
+                        <TableCell className="text-center text-xs tabular-nums">
+                          {adminStats[p.id]?.ano ?? 0}
+                        </TableCell>
+                      </>
+                    )}
+
+                    <TableCell className="text-center text-xs tabular-nums">
+                      {inscStats[p.id]?.mes ?? 0}
                     </TableCell>
-                    <TableCell className="text-center text-xs tabular-nums text-muted-foreground">
-                      {statsMap[p.id]?.ano ?? 0}
-                    </TableCell>
-                    <TableCell className="text-center text-xs tabular-nums text-primary">
-                      {statsMap[p.id]?.inscricoesMes ?? 0}
+                    <TableCell className="text-center text-xs tabular-nums">
+                      {inscStats[p.id]?.semana ?? 0}
                     </TableCell>
 
                     {isAdmin && (
@@ -543,6 +579,12 @@ const MonitoresSection = () => {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      {viewingMonitorId && (
+        <MonitorProfileModal
+          userId={viewingMonitorId}
+          onClose={() => setViewingMonitorId(null)}
+        />
+      )}
     </section>
   );
 };

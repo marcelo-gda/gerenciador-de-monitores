@@ -108,11 +108,15 @@ const FinalizeScaleDialog = ({ eventId, eventTitle, monitors, onClose, onFinaliz
       if (missingLevel) { toast.error("Defina o cargo de todos os monitores escalados"); return; }
     }
 
+    // Snapshot dos selecionados e dos previamente confirmados no momento da chamada
+    const monitorsToSave = selectedMonitors;
+    const previouslyConfirmedIds = new Set(monitors.filter((m) => m.is_confirmed).map((m) => m.user_id));
+
     lock ? setSaving(true) : setSavingDraft(true);
 
     await supabase.from("event_monitors").update({ is_confirmed: false }).eq("event_id", eventId);
 
-    for (const m of selectedMonitors) {
+    for (const m of monitorsToSave) {
       await supabase
         .from("event_monitors")
         .update({
@@ -128,10 +132,12 @@ const FinalizeScaleDialog = ({ eventId, eventTitle, monitors, onClose, onFinaliz
       await supabase.from("events").update({ is_locked: true }).eq("id", eventId);
       if (user) {
         const hierarchyLabel = (slug: string) => { const h = hierarchies.find((h) => h.slug === slug); return h ? `${h.emoji} ${h.name}` : slug; };
-        const notifications = selectedMonitors.map((m) => ({
+        // Notifica apenas quem está sendo confirmado agora (evita duplicatas e notifica desmarcados)
+        const newlyConfirmed = monitorsToSave.filter((m) => !previouslyConfirmedIds.has(m.user_id));
+        const notifications = newlyConfirmed.map((m) => ({
           sender_id: user.id,
           recipient_id: m.user_id,
-          content: `✅ Você foi escalado(a) para "${eventTitle}" como ${hierarchyLabel(levels[m.user_id])}! Confira os detalhes na escala.`,
+          content: `✅ Você foi escalado(a) para "${eventTitle}" como ${hierarchyLabel(levels[m.user_id])}!\n🗓️ Acesse o evento na escala para ver detalhes e adicionar à sua agenda.`,
         }));
         await supabase.from("messages").insert(notifications);
       }

@@ -10,6 +10,8 @@ interface Profile {
   display_name: string;
   phone: string | null;
   status: UserStatus;
+  pix_key: string | null;
+  identity: string | null;
 }
 
 interface AuthContextType {

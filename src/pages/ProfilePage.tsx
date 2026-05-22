@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
-import { ArrowLeft, User, Calendar, Clock, MapPin, Copy, Check, KeyRound, Pencil } from "lucide-react";
+import { ArrowLeft, User, Clock, MapPin, Copy, Check, KeyRound, Pencil } from "lucide-react";
 import AppNavbar from "@/components/AppNavbar";
 import { motion, AnimatePresence } from "framer-motion";
 import { useAuth } from "@/contexts/AuthContext";
@@ -44,7 +44,7 @@ const typeStyles: Record<string, string> = {
 };
 
 const ProfilePage = () => {
-  const { profile, user } = useAuth();
+  const { profile, user, isAdmin } = useAuth();
   const [history, setHistory] = useState<HistoryEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [expandedEvent, setExpandedEvent] = useState<string | null>(null);
@@ -140,21 +140,14 @@ const ProfilePage = () => {
   const now = new Date();
   const currentMonth = now.getMonth();
   const currentYear = now.getFullYear();
+  const startOfWeek = new Date(now);
+  startOfWeek.setDate(now.getDate() - now.getDay());
+  startOfWeek.setHours(0, 0, 0, 0);
 
-  const festasMes = history.filter((h) => {
-    const d = new Date(h.event_date + "T12:00:00");
-    return h.is_confirmed && d.getMonth() === currentMonth && d.getFullYear() === currentYear;
-  }).length;
-
-  const festasAno = history.filter((h) => {
-    const d = new Date(h.event_date + "T12:00:00");
-    return h.is_confirmed && d.getFullYear() === currentYear;
-  }).length;
-
-  const inscricoesMes = history.filter((h) => {
-    const d = new Date(h.event_date + "T12:00:00");
-    return d.getMonth() === currentMonth && d.getFullYear() === currentYear;
-  }).length;
+  const inscricoesMes = history.filter((h) => { const d = new Date(h.event_date + "T12:00:00"); return d.getMonth() === currentMonth && d.getFullYear() === currentYear; }).length;
+  const inscricoesAno = history.filter((h) => { const d = new Date(h.event_date + "T12:00:00"); return d.getFullYear() === currentYear; }).length;
+  const confirmadasAno = history.filter((h) => { const d = new Date(h.event_date + "T12:00:00"); return h.is_confirmed && d.getFullYear() === currentYear; }).length;
+  const inscricoesSemana = history.filter((h) => { const d = new Date(h.event_date + "T12:00:00"); return d >= startOfWeek; }).length;
 
   const levelCounts: Record<string, number> = {};
   history.forEach((h) => {
@@ -267,23 +260,31 @@ const ProfilePage = () => {
         </div>
 
         {/* Stats */}
-        <div className="grid grid-cols-3 gap-3">
-          <div className="rounded-lg border-2 border-border bg-card p-4 text-center">
-            <Calendar className="mx-auto mb-1 h-5 w-5 text-camp" />
-            <p className="font-display text-2xl font-bold text-foreground">{festasMes}</p>
-            <p className="text-xs text-muted-foreground">Festas no mês</p>
+        {isAdmin ? (
+          <div className="grid grid-cols-2 gap-3">
+            <div className="rounded-lg border-2 border-border bg-card p-4 text-center">
+              <p className="font-display text-2xl font-bold text-camp">{inscricoesMes}</p>
+              <p className="text-xs text-muted-foreground">Inscr./mês</p>
+            </div>
+            <div className="rounded-lg border-2 border-border bg-card p-4 text-center">
+              <p className="font-display text-2xl font-bold text-primary">{inscricoesAno}</p>
+              <p className="text-xs text-muted-foreground">Inscr./ano</p>
+            </div>
+            <div className="rounded-lg border-2 border-border bg-card p-4 text-center">
+              <p className="font-display text-2xl font-bold text-secondary">{confirmadasAno}</p>
+              <p className="text-xs text-muted-foreground">Confirmadas/ano</p>
+            </div>
+            <div className="rounded-lg border-2 border-border bg-card p-4 text-center">
+              <p className="font-display text-2xl font-bold text-foreground">{inscricoesSemana}</p>
+              <p className="text-xs text-muted-foreground">Inscr./semana</p>
+            </div>
           </div>
+        ) : (
           <div className="rounded-lg border-2 border-border bg-card p-4 text-center">
-            <Calendar className="mx-auto mb-1 h-5 w-5 text-secondary" />
-            <p className="font-display text-2xl font-bold text-foreground">{festasAno}</p>
-            <p className="text-xs text-muted-foreground">Festas no ano</p>
+            <p className="font-display text-3xl font-bold text-secondary">{confirmadasAno}</p>
+            <p className="text-sm text-muted-foreground mt-1">Festas confirmadas em {currentYear}</p>
           </div>
-          <div className="rounded-lg border-2 border-border bg-card p-4 text-center">
-            <Calendar className="mx-auto mb-1 h-5 w-5 text-primary" />
-            <p className="font-display text-2xl font-bold text-foreground">{inscricoesMes}</p>
-            <p className="text-xs text-muted-foreground">Inscr./mês</p>
-          </div>
-        </div>
+        )}
 
         {/* Copy Report Button */}
         <button

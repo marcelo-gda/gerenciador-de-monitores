@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import JoinEventDialog from "@/components/JoinEventDialog";
 import EditEventModal from "@/components/EditEventModal";
 import { calcHours, formatCurrency } from "@/utils/payments";
+import { generateICS, downloadICS } from "@/utils/generateICS";
 
 interface Monitor {
   id: string;
@@ -175,6 +176,7 @@ const CalendarEventModal = ({ event, onClose, onRefresh }: CalendarEventModalPro
 
   const monitorCount = event.monitors.length;
   const isUserInEvent = event.monitors.some((m) => m.user_id === user?.id);
+  const isUserConfirmed = event.monitors.some((m) => m.user_id === user?.id && m.is_confirmed);
   const isFinalized = event.is_locked && event.monitors.some((m) => m.is_confirmed);
 
   // total_slots é apenas informativo — não bloqueia inscrições
@@ -411,8 +413,28 @@ const CalendarEventModal = ({ event, onClose, onRefresh }: CalendarEventModalPro
             </div>
           )}
 
+          {/* Adicionar à agenda */}
+          {isUserConfirmed && (
+            <button
+              onClick={() => {
+                const ics = generateICS({
+                  title: `${event.emoji} ${event.title}`,
+                  startDate: event.event_date,
+                  endDate: event.end_date,
+                  startTime: event.start_time,
+                  endTime: event.end_time,
+                  location: event.address,
+                });
+                downloadICS(`${event.title.replace(/\s+/g, "_")}.ics`, ics);
+              }}
+              className="mt-4 flex w-full items-center justify-center gap-2 rounded-lg border border-primary/30 bg-primary/10 py-2 text-sm font-semibold text-primary hover:bg-primary/20 transition-colors"
+            >
+              📅 Adicionar à agenda
+            </button>
+          )}
+
           {/* Actions */}
-          <div className="mt-5 flex gap-2">
+          <div className="mt-3 flex gap-2">
             {canJoin && (
               <button
                 onClick={() => setShowJoinDialog(true)}
