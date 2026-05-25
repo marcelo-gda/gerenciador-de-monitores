@@ -33,6 +33,8 @@ interface EventEntry {
   noTransport: boolean;
   hours: number;
   eventValue: number;
+  bonusValue: number;
+  bonusLabel: string;
   transport: number;
   total: number;
 }
@@ -63,7 +65,7 @@ interface MonitorSummary {
 async function buildSummaries(filterUserId?: string): Promise<MonitorSummary[]> {
   const today = new Date().toISOString().split("T")[0];
 
-  const [eventsRes, hierarchiesRes, teamsRes, teamRolesRes] = await Promise.all([
+  const [eventsRes, hierarchiesRes, teamsRes, teamRolesRes, rolesRes] = await Promise.all([
     supabase
       .from("events")
       .select("id, title, emoji, event_date, start_time, end_time, team, custom_rates")
@@ -73,12 +75,14 @@ async function buildSummaries(filterUserId?: string): Promise<MonitorSummary[]> 
     supabase.from("hierarchies").select("id, slug, name, emoji"),
     supabase.from("teams").select("id, sort_order, name"),
     supabase.from("team_roles").select("id, team_id, hierarchy_id, hourly_rate"),
+    supabase.from("roles").select("id, slug, name, emoji, fixed_value, uses_junior_rate"),
   ]);
 
   const pastEvents = eventsRes.data ?? [];
   const hierarchies = hierarchiesRes.data ?? [];
   const teams = teamsRes.data ?? [];
   const teamRoles = teamRolesRes.data ?? [];
+  const roles = rolesRes.data ?? [];
 
   if (!pastEvents.length) return [];
 
@@ -86,7 +90,7 @@ async function buildSummaries(filterUserId?: string): Promise<MonitorSummary[]> 
 
   let emQuery = supabase
     .from("event_monitors")
-    .select("id, event_id, user_id, level, transport_amount, no_transport")
+    .select("id, event_id, user_id, level, transport_amount, no_transport, bonus_tags")
     .in("event_id", eventIds)
     .eq("is_confirmed", true);
   if (filterUserId) emQuery = emQuery.eq("user_id", filterUserId);
@@ -114,6 +118,7 @@ async function buildSummaries(filterUserId?: string): Promise<MonitorSummary[]> 
 
   const eventsMap = Object.fromEntries(pastEvents.map((e) => [e.id, e]));
   const hierarchiesBySlug = Object.fromEntries(hierarchies.map((h) => [h.slug, h]));
+  const rolesBySlug = Object.fromEntries(roles.map((r) => [r.slug, r]));
   const profilesMap = Object.fromEntries((profilesData ?? []).map((p) => [p.id, p]));
 
   // Keep the most recent payment record per monitor
@@ -131,18 +136,37 @@ async function buildSummaries(filterUserId?: string): Promise<MonitorSummary[]> 
     if (!event) continue;
 
     const hierarchy = em.level ? hierarchiesBySlug[em.level] : null;
+    const bonusTags = (em.bonus_tags as string[] | null) ?? [];
+
+    // Resolve bonus role effects
+    let bonusValue = 0;
+    let bonusLabel = "";
+    let useJuniorRate = false;
+    for (const tag of bonusTags) {
+      const role = rolesBySlug[tag];
+      if (!role) continue;
+      if (role.uses_junior_rate) useJuniorRate = true;
+      const label = `${role.emoji} ${role.name}`;
+      bonusLabel = bonusLabel ? `${bonusLabel}, ${label}` : label;
+      if (role.fixed_value != null) bonusValue += role.fixed_value;
+    }
+
+    // Se uses_junior_rate, troca o nível efetivo para "junior"
+    const effectiveLevel = useJuniorRate ? "junior" : (em.level ?? null);
+    const effectiveHierarchy = effectiveLevel ? hierarchiesBySlug[effectiveLevel] : null;
+
     let hourlyRate = 0;
     const eventCustomRates = (event.custom_rates as Record<string, number> | null) ?? {};
-    if (em.level && eventCustomRates[em.level] !== undefined) {
-      hourlyRate = eventCustomRates[em.level];
-    } else if (hierarchy && event.team != null) {
+    if (effectiveLevel && eventCustomRates[effectiveLevel] !== undefined) {
+      hourlyRate = eventCustomRates[effectiveLevel];
+    } else if (effectiveHierarchy && event.team != null) {
       const teamNum = event.team as number;
       const team =
         teams.find((t) => t.sort_order === teamNum - 1) ??
         teams.find((t) => t.sort_order === teamNum);
       if (team) {
         const tr = teamRoles.find(
-          (r) => r.team_id === team.id && r.hierarchy_id === hierarchy.id
+          (r) => r.team_id === team.id && r.hierarchy_id === effectiveHierarchy.id
         );
         if (tr) hourlyRate = tr.hourly_rate ?? 0;
       }
@@ -167,8 +191,10 @@ async function buildSummaries(filterUserId?: string): Promise<MonitorSummary[]> 
       noTransport: em.no_transport ?? false,
       hours,
       eventValue,
+      bonusValue,
+      bonusLabel,
       transport,
-      total: eventValue + transport,
+      total: eventValue + bonusValue + transport,
     };
 
     if (!byUser[em.user_id]) byUser[em.user_id] = [];
@@ -416,6 +442,7 @@ function AdminView() {
                           <th className="text-left pb-2 pr-3 font-semibold">Hierarquia</th>
                           <th className="text-right pb-2 pr-3 font-semibold">Horas</th>
                           <th className="text-right pb-2 pr-3 font-semibold">Valor</th>
+                          <th className="text-right pb-2 pr-3 font-semibold">Bônus</th>
                           <th className="text-right pb-2 pr-3 font-semibold">Transp.</th>
                           <th className="text-right pb-2 font-semibold">Total</th>
                         </tr>
@@ -438,6 +465,13 @@ function AdminView() {
                             <td className="py-1.5 pr-3 text-right">
                               {formatCurrency(e.eventValue)}
                             </td>
+                            <td className="py-1.5 pr-3 text-right">
+                              {e.bonusValue > 0 ? (
+                                <span className="text-secondary font-semibold" title={e.bonusLabel}>
+                                  +{formatCurrency(e.bonusValue)}
+                                </span>
+                              ) : "—"}
+                            </td>
                             <td className="py-1.5 pr-3 text-right text-muted-foreground">
                               {e.noTransport ? "—" : formatCurrency(e.transport)}
                             </td>
@@ -450,7 +484,7 @@ function AdminView() {
                       <tfoot>
                         <tr className="border-t-2 border-border">
                           <td
-                            colSpan={6}
+                            colSpan={7}
                             className="pt-2 text-xs font-semibold text-muted-foreground"
                           >
                             Subtotal calculado
@@ -862,7 +896,7 @@ function MonitorView({ userId }: { userId: string }) {
               noTransport: e.noTransport,
             };
             const localTransportValue = local.noTransport ? 0 : local.amount;
-            const localTotal = e.eventValue + localTransportValue;
+            const localTotal = e.eventValue + e.bonusValue + localTransportValue;
 
             return (
               <Card key={e.emId} className="border-2 border-border">

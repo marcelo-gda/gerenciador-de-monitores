@@ -25,6 +25,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
 
 type TableName = "hierarchies" | "roles";
 
@@ -35,15 +36,19 @@ interface Item {
   slug: string;
   description: string;
   sort_order: number;
+  fixed_value?: number | null;
+  uses_junior_rate?: boolean;
 }
 
 interface FormData {
   emoji: string;
   name: string;
   description: string;
+  fixed_value: string;
+  uses_junior_rate: boolean;
 }
 
-const EMPTY_FORM: FormData = { emoji: "", name: "", description: "" };
+const EMPTY_FORM: FormData = { emoji: "", name: "", description: "", fixed_value: "", uses_junior_rate: false };
 
 const toSlug = (name: string) =>
   name
@@ -61,6 +66,7 @@ interface SectionProps {
   tableName: TableName;
   createLabel: string;
   isAdmin: boolean;
+  showPaymentFields?: boolean;
 }
 
 const ManageableSection = ({
@@ -69,6 +75,7 @@ const ManageableSection = ({
   tableName,
   createLabel,
   isAdmin,
+  showPaymentFields = false,
 }: SectionProps) => {
   const qc = useQueryClient();
   const queryKey = [tableName];
@@ -100,6 +107,12 @@ const ManageableSection = ({
       item: Item | null;
       data: FormData;
     }) => {
+      const paymentFields = showPaymentFields
+        ? {
+            fixed_value: data.fixed_value.trim() ? parseFloat(data.fixed_value) : null,
+            uses_junior_rate: data.uses_junior_rate,
+          }
+        : {};
       if (item) {
         const { error } = await supabase
           .from(tableName)
@@ -107,6 +120,7 @@ const ManageableSection = ({
             emoji: data.emoji,
             name: data.name,
             description: data.description,
+            ...paymentFields,
           })
           .eq("id", item.id);
         if (error) throw error;
@@ -119,6 +133,7 @@ const ManageableSection = ({
           slug: toSlug(data.name),
           description: data.description,
           sort_order: maxOrder + 1,
+          ...paymentFields,
         });
         if (error) throw error;
       }
@@ -160,7 +175,13 @@ const ManageableSection = ({
 
   const openEdit = (item: Item) => {
     setEditingItem(item);
-    setForm({ emoji: item.emoji, name: item.name, description: item.description });
+    setForm({
+      emoji: item.emoji,
+      name: item.name,
+      description: item.description,
+      fixed_value: item.fixed_value != null ? String(item.fixed_value) : "",
+      uses_junior_rate: item.uses_junior_rate ?? false,
+    });
     setDialogOpen(true);
   };
 
@@ -217,6 +238,20 @@ const ManageableSection = ({
                   <p className="font-body text-sm leading-relaxed text-muted-foreground">
                     {item.description}
                   </p>
+                  {showPaymentFields && (item.fixed_value != null || item.uses_junior_rate) && (
+                    <div className="mt-1.5 flex flex-wrap gap-1.5">
+                      {item.fixed_value != null && (
+                        <span className="inline-flex items-center rounded-full border border-primary/30 bg-primary/10 px-2 py-0.5 text-xs font-semibold text-primary">
+                          + R$ {item.fixed_value.toFixed(2)} fixo
+                        </span>
+                      )}
+                      {item.uses_junior_rate && (
+                        <span className="inline-flex items-center rounded-full border border-secondary/30 bg-secondary/10 px-2 py-0.5 text-xs font-semibold text-secondary">
+                          Taxa/hora Júnior
+                        </span>
+                      )}
+                    </div>
+                  )}
                 </div>
                 {isAdmin && (
                   <div className="flex shrink-0 gap-1 opacity-0 transition-opacity group-hover:opacity-100">
@@ -296,6 +331,41 @@ const ManageableSection = ({
                 className="resize-none font-body text-sm"
               />
             </div>
+
+            {showPaymentFields && (
+              <>
+                <div className="space-y-1.5">
+                  <Label htmlFor={`${tableName}-fixed-value`}>Valor fixo (R$)</Label>
+                  <Input
+                    id={`${tableName}-fixed-value`}
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={form.fixed_value}
+                    onChange={(e) => setForm({ ...form, fixed_value: e.target.value })}
+                    placeholder="Ex: 15,00 — deixe vazio se não houver"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Somado ao total da festa sem multiplicar por horas.
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Checkbox
+                    id={`${tableName}-junior-rate`}
+                    checked={form.uses_junior_rate}
+                    onCheckedChange={(checked) =>
+                      setForm({ ...form, uses_junior_rate: checked === true })
+                    }
+                  />
+                  <label
+                    htmlFor={`${tableName}-junior-rate`}
+                    className="text-sm cursor-pointer select-none"
+                  >
+                    Usar valor/hora do Júnior (independente do nível escalado)
+                  </label>
+                </div>
+              </>
+            )}
           </div>
 
           <DialogFooter>
@@ -360,6 +430,7 @@ const FuncoesSection = () => {
         tableName="roles"
         createLabel="Nova Função Especial"
         isAdmin={isAdmin}
+        showPaymentFields
       />
     </section>
   );
