@@ -164,15 +164,14 @@ const Index = () => {
   }, [timeFilter]);
 
   // Group events by date
-  const groupByDate = (list: EventData[]) => {
+  const groupByDate = (list: EventData[], desc = false) => {
     const groups: Record<string, EventData[]> = {};
     list.forEach((e) => {
       if (!groups[e.event_date]) groups[e.event_date] = [];
       groups[e.event_date].push(e);
     });
-    // Sort events within each date by start_time
     Object.values(groups).forEach((g) => g.sort((a, b) => a.start_time.localeCompare(b.start_time)));
-    return Object.entries(groups).sort(([a], [b]) => a.localeCompare(b));
+    return Object.entries(groups).sort(([a], [b]) => desc ? b.localeCompare(a) : a.localeCompare(b));
   };
 
   const formatDateHeader = (dateStr: string) => {
@@ -271,8 +270,8 @@ const Index = () => {
     scaleTab === "trash" ? deletedEvents :
     futureOpen;
 
-  const renderGrouped = (list: EventData[]) => {
-    const grouped = groupByDate(list);
+  const renderGrouped = (list: EventData[], desc = false) => {
+    const grouped = groupByDate(list, desc);
     if (grouped.length === 0) return <p className="text-center text-muted-foreground">Nenhuma escala encontrada.</p>;
     return (
       <div className="space-y-5">
@@ -528,7 +527,7 @@ const Index = () => {
               <>
                 {scaleTab === "open" && renderGrouped(futureOpen)}
                 {scaleTab === "finalized" && renderGrouped(futureFinalized)}
-                {scaleTab === "past" && renderGrouped(pastEvents)}
+                {scaleTab === "past" && renderGrouped(pastEvents, true)}
                 {scaleTab === "trash" && renderGrouped(deletedEvents)}
               </>
             )}
