@@ -130,6 +130,60 @@ async function buildSummaries(filterUserId?: string): Promise<MonitorSummary[]> 
     }
   }
 
+  // ── Eventos especiais (special_event_day_signups) ────────────────────────
+  const { data: completedSefs } = await (supabase as any)
+    .from("special_events")
+    .select("id, title")
+    .lt("end_date", today);
+
+  const sefByUser: Record<string, EventEntry[]> = {};
+
+  if (completedSefs?.length) {
+    const sefIds = (completedSefs as any[]).map((e) => e.id);
+    const { data: sefDays } = await (supabase as any)
+      .from("special_event_days")
+      .select("id, special_event_id, date")
+      .in("special_event_id", sefIds);
+
+    if (sefDays?.length) {
+      const dayIds = (sefDays as any[]).map((d) => d.id);
+      let aQ = (supabase as any)
+        .from("special_event_day_signups")
+        .select("id, user_id, value_per_day, day_id")
+        .in("day_id", dayIds)
+        .eq("status", "confirmed");
+      if (filterUserId) aQ = aQ.eq("user_id", filterUserId);
+      const { data: sefSignups } = await aQ;
+
+      for (const s of sefSignups ?? []) {
+        const day = (sefDays as any[]).find((d) => d.id === s.day_id);
+        const ev = (completedSefs as any[]).find((e) => e.id === day?.special_event_id);
+        const value = s.value_per_day ?? 0;
+        const entry: EventEntry = {
+          emId: s.id,
+          eventId: ev?.id ?? s.day_id,
+          eventDate: day?.date ?? today,
+          title: `${ev?.title ?? "Evento Especial"} — ${day?.date ? new Date(day.date + "T12:00:00").toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" }) : ""}`,
+          emoji: "⭐",
+          startTime: "—",
+          endTime: "—",
+          level: null,
+          hierarchyName: "Evento Especial",
+          hierarchyEmoji: "⭐",
+          transportAmount: 0,
+          noTransport: true,
+          hours: 0,
+          eventValue: value,
+          transport: 0,
+          total: value,
+        };
+        if (!sefByUser[s.user_id]) sefByUser[s.user_id] = [];
+        sefByUser[s.user_id].push(entry);
+      }
+    }
+  }
+  // ─────────────────────────────────────────────────────────────────────────
+
   const byUser: Record<string, EventEntry[]> = {};
   for (const em of eventMonitors) {
     const event = eventsMap[em.event_id];
@@ -201,7 +255,24 @@ async function buildSummaries(filterUserId?: string): Promise<MonitorSummary[]> 
     byUser[em.user_id].push(entry);
   }
 
-  const summaries: MonitorSummary[] = userIds.map((uid) => {
+  // Merge special event entries
+  const allUserIds = [...new Set([...userIds, ...Object.keys(sefByUser)])];
+  for (const uid of Object.keys(sefByUser)) {
+    byUser[uid] = [...(byUser[uid] ?? []), ...(sefByUser[uid] ?? [])];
+  }
+  // Fetch profiles for SEF-only monitors
+  const missingIds = allUserIds.filter((id) => !profilesMap[id]);
+  if (missingIds.length) {
+    const { data: extraProfiles } = await supabase
+      .from("profiles")
+      .select("id, display_name, pix_key")
+      .in("id", missingIds);
+    for (const p of extraProfiles ?? []) {
+      (profilesMap as any)[p.id] = p;
+    }
+  }
+
+  const summaries: MonitorSummary[] = allUserIds.map((uid) => {
     const profile = profilesMap[uid];
     const events = (byUser[uid] ?? []).sort((a, b) =>
       b.eventDate.localeCompare(a.eventDate)

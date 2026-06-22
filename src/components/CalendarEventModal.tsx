@@ -6,7 +6,6 @@ import { toast } from "sonner";
 import JoinEventDialog from "@/components/JoinEventDialog";
 import EditEventModal from "@/components/EditEventModal";
 import { calcHours, formatCurrency } from "@/utils/payments";
-import { generateICS, downloadICS } from "@/utils/generateICS";
 
 interface Monitor {
   id: string;
@@ -71,7 +70,7 @@ const levelLabels: Record<string, string> = {
 };
 
 const typeLabels: Record<string, string> = {
-  sun: "☀️ Dia",
+  sun: "☀️ Tarde",
   moon: "🌙 Noite",
   camp: "⛺ Acampamento",
 };
@@ -81,15 +80,6 @@ const typeBadge: Record<string, string> = {
   moon: "bg-moon/20 text-moon border-moon/30",
   camp: "bg-camp/20 text-camp border-camp/30",
 };
-
-function getEffectiveType(type: string, startTime: string, endTime: string): string {
-  if (type === 'camp') return 'camp';
-  const [startH, startM] = startTime.split(':').map(Number);
-  let [endH, endM] = endTime.split(':').map(Number);
-  if (endH < startH) endH += 24;
-  const midpoint = ((startH * 60 + startM) + (endH * 60 + endM)) / 2;
-  return midpoint >= 18 * 60 ? 'moon' : 'sun';
-}
 
 const CalendarEventModal = ({ event, onClose, onRefresh }: CalendarEventModalProps) => {
   const { user, isAdmin } = useAuth();
@@ -105,9 +95,8 @@ const CalendarEventModal = ({ event, onClose, onRefresh }: CalendarEventModalPro
       .select("id, title")
       .eq("event_id", event.id)
       .limit(1)
-      .then(({ data, error }: { data: { id: string; title: string }[] | null; error: unknown }) => {
-        const found = data?.[0] ?? null;
-        setLinkedSpecialEvent(found);
+      .then(({ data }: { data: { id: string; title: string }[] | null }) => {
+        setLinkedSpecialEvent(data?.[0] ?? null);
       });
   }, [event.id]);
 
@@ -125,13 +114,9 @@ const CalendarEventModal = ({ event, onClose, onRefresh }: CalendarEventModalPro
       supabase.from("team_roles").select("team_id, hierarchy_id, hourly_rate"),
       supabase.from("teams").select("id, sort_order"),
     ]).then(([hierRes, rolesRes, teamsRes]) => {
-      const loadedTeams = teamsRes.data ?? [];
-      const loadedRoles = rolesRes.data ?? [];
-      const loadedHier = hierRes.data ?? [];
-
-      setHierarchies(loadedHier);
-      setTeamRoles(loadedRoles);
-      setTeams(loadedTeams);
+      setHierarchies(hierRes.data ?? []);
+      setTeamRoles(rolesRes.data ?? []);
+      setTeams(teamsRes.data ?? []);
       setRatesLoading(false);
     });
   }, [event.id, event.is_paid]);
@@ -155,7 +140,6 @@ const CalendarEventModal = ({ event, onClose, onRefresh }: CalendarEventModalPro
     return { rate: tr.hourly_rate, isCustom: false };
   };
 
-  // Extra entries in custom_rates that don't correspond to any standard hierarchy slug
   const extraRates = Object.entries(event.custom_rates ?? {}).filter(
     ([key]) => !hierarchies.some((h) => h.slug === key)
   );
@@ -176,10 +160,10 @@ const CalendarEventModal = ({ event, onClose, onRefresh }: CalendarEventModalPro
 
   const monitorCount = event.monitors.length;
   const isUserInEvent = event.monitors.some((m) => m.user_id === user?.id);
-  const isUserConfirmed = event.monitors.some((m) => m.user_id === user?.id && m.is_confirmed);
   const isFinalized = event.is_locked && event.monitors.some((m) => m.is_confirmed);
+  const confirmedMonitors = event.monitors.filter((m) => m.is_confirmed);
 
-  // total_slots é apenas informativo — não bloqueia inscrições
+  // Qualquer usuário logado pode se inscrever — total_slots é apenas informativo
   const canJoin = !!user && !event.is_locked && !isUserInEvent && !isPastEvent && !isComingSoon;
   const canLeave = !!user && !event.is_locked && isUserInEvent && !isPastEvent && !isComingSoon;
 
@@ -206,8 +190,6 @@ const CalendarEventModal = ({ event, onClose, onRefresh }: CalendarEventModalPro
       year: "numeric",
     });
 
-  const confirmedMonitors = event.monitors.filter((m) => m.is_confirmed);
-
   const hasAnyCustomRate =
     hierarchies.some((h) => getEffectiveRate(h)?.isCustom) || extraRates.length > 0;
 
@@ -230,10 +212,10 @@ const CalendarEventModal = ({ event, onClose, onRefresh }: CalendarEventModalPro
               <div className="mt-1.5 flex flex-wrap gap-1.5">
                 <span
                   className={`rounded-full border px-2 py-0.5 text-xs font-semibold ${
-                    typeBadge[getEffectiveType(event.type, event.start_time, event.end_time)] || "bg-muted text-muted-foreground border-border"
+                    typeBadge[event.type] || "bg-muted text-muted-foreground border-border"
                   }`}
                 >
-                  {typeLabels[getEffectiveType(event.type, event.start_time, event.end_time)] || event.type}
+                  {typeLabels[event.type] || event.type}
                 </span>
                 {isFinalized && (
                   <span className="flex items-center gap-1 rounded-full bg-camp/20 px-2 py-0.5 text-xs font-semibold text-camp">
@@ -295,7 +277,8 @@ const CalendarEventModal = ({ event, onClose, onRefresh }: CalendarEventModalPro
             <div className="flex items-center gap-2 text-muted-foreground">
               <Users className="h-4 w-4 shrink-0" />
               <span>
-                {monitorCount} monitor{monitorCount !== 1 ? "es" : ""} inscritos{event.total_slots ? ` · ${event.total_slots} vagas` : ""}
+                {monitorCount} monitor{monitorCount !== 1 ? "es" : ""} inscritos
+                {event.total_slots ? ` · ${event.total_slots} vagas` : ""}
               </span>
             </div>
           </div>
@@ -413,28 +396,8 @@ const CalendarEventModal = ({ event, onClose, onRefresh }: CalendarEventModalPro
             </div>
           )}
 
-          {/* Adicionar à agenda */}
-          {isUserConfirmed && (
-            <button
-              onClick={() => {
-                const ics = generateICS({
-                  title: `${event.emoji} ${event.title}`,
-                  startDate: event.event_date,
-                  endDate: event.end_date,
-                  startTime: event.start_time,
-                  endTime: event.end_time,
-                  location: event.address,
-                });
-                downloadICS(`${event.title.replace(/\s+/g, "_")}.ics`, ics);
-              }}
-              className="mt-4 flex w-full items-center justify-center gap-2 rounded-lg border border-primary/30 bg-primary/10 py-2 text-sm font-semibold text-primary hover:bg-primary/20 transition-colors"
-            >
-              📅 Adicionar à agenda
-            </button>
-          )}
-
           {/* Actions */}
-          <div className="mt-3 flex gap-2">
+          <div className="mt-5 flex gap-2">
             {canJoin && (
               <button
                 onClick={() => setShowJoinDialog(true)}

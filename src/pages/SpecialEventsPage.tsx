@@ -2,38 +2,53 @@ import { useState, useEffect, useCallback } from "react";
 import { Link } from "react-router-dom";
 import {
   ArrowLeft, Plus, ChevronDown, ChevronRight, X, Save,
-  Loader2, Trash2, Check, Users, Pencil,
+  Loader2, Trash2, Check, ArrowUpDown, ChevronUp, CheckCircle2,
 } from "lucide-react";
 import AppNavbar from "@/components/AppNavbar";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 interface Profile { id: string; display_name: string }
 
-interface Assignment {
+interface GdcOption {
   id: string;
-  function_id: string;
-  user_id: string;
-  status: string; // 'volunteer' | 'confirmed' | 'rejected'
-  created_at: string;
-  profiles: Profile | null;
-}
-
-interface SefFunction {
-  id: string;
-  day_id: string;
   emoji: string;
   name: string;
-  hours: number;
-  hourly_rate: number;
-  max_monitors: number | null;
-  sort_order: number;
-  time_start: string | null;
-  time_end: string | null;
-  special_event_assignments: Assignment[];
+  value_per_day: number | null;
+  category: "gda" | "gdc";
+}
+
+interface DaySignupEdit {
+  id: string;
+  user_id: string;
+  display_name: string;
+  status: string;
+  hierarchy_id: string | null;
+  role_id_1: string | null;
+  bonus: number;
+}
+
+interface DaySignup {
+  id: string;
+  day_id: string;
+  user_id: string;
+  status: string;
+  hierarchy_id: string | null;
+  role_id_1: string | null;
+  bonus: number | null;
+  value_per_day: number | null;
+  created_at: string;
+  profiles: Profile | null;
 }
 
 interface SefDay {
@@ -41,7 +56,10 @@ interface SefDay {
   special_event_id: string;
   date: string;
   sort_order: number;
-  special_event_functions: SefFunction[];
+  time_start: string | null;
+  time_end: string | null;
+  monitors_needed: number | null;
+  special_event_day_signups: DaySignup[];
 }
 
 interface SpecialEvent {
@@ -52,6 +70,7 @@ interface SpecialEvent {
   end_date: string;
   notes: string | null;
   created_at: string;
+  category: "gda" | "gdc";
   special_event_days: SefDay[];
 }
 
@@ -82,15 +101,6 @@ const getDatesInRange = (start: string, end: string): string[] => {
   return dates;
 };
 
-const computePeriodHours = (start: string, end: string): string => {
-  if (!start || !end) return "";
-  const [sh, sm] = start.split(":").map(Number);
-  const [eh, em] = end.split(":").map(Number);
-  let mins = eh * 60 + em - (sh * 60 + sm);
-  if (mins <= 0) mins += 24 * 60;
-  return String(Math.round((mins / 60) * 100) / 100);
-};
-
 // ── Create Modal ──────────────────────────────────────────────────────────────
 
 interface CalEvent { id: string; title: string; event_date: string; end_date: string | null; type: string }
@@ -103,6 +113,8 @@ const CreateSpecialEventModal = ({ onClose, onCreated }: CreateModalProps) => {
   const [notes, setNotes] = useState("");
   const [eventId, setEventId] = useState<string>("");
   const [calEvents, setCalEvents] = useState<CalEvent[]>([]);
+  const [category, setCategory] = useState<"gda" | "gdc">("gda");
+  const [autoCreateDays, setAutoCreateDays] = useState(true);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -139,16 +151,46 @@ const CreateSpecialEventModal = ({ onClose, onCreated }: CreateModalProps) => {
       return;
     }
     setSaving(true);
-    const { error } = await supabase.from("special_events").insert({
-      title: title.trim(),
-      start_date: startDate,
-      end_date: endDate,
-      notes: notes.trim() || null,
-      event_id: eventId || null,
-    } as any);
+    const { data: inserted, error } = await (supabase as any)
+      .from("special_events")
+      .insert({
+        title: title.trim(),
+        start_date: startDate,
+        end_date: endDate,
+        notes: notes.trim() || null,
+        event_id: eventId || null,
+        category,
+      } as any)
+      .select("id")
+      .single();
+
+    if (error) {
+      setSaving(false);
+      toast.error("Erro ao criar evento especial");
+      return;
+    }
+
+    if (autoCreateDays && inserted) {
+      const dates = getDatesInRange(startDate, endDate);
+      const dayRows = dates.map((date, i) => ({
+        special_event_id: (inserted as any).id,
+        date,
+        sort_order: i,
+      }));
+      const { error: daysError } = await (supabase as any)
+        .from("special_event_days")
+        .insert(dayRows);
+      if (daysError) {
+        toast.error("Evento criado, mas houve um erro ao gerar os dias automaticamente");
+      }
+    }
+
     setSaving(false);
-    if (error) { toast.error("Erro ao criar evento especial"); return; }
-    toast.success("Evento especial criado!");
+    toast.success(
+      autoCreateDays
+        ? "Evento especial criado com os dias gerados automaticamente!"
+        : "Evento especial criado!"
+    );
     onCreated();
     onClose();
   };
@@ -161,6 +203,22 @@ const CreateSpecialEventModal = ({ onClose, onCreated }: CreateModalProps) => {
           <button onClick={onClose} className="rounded-lg p-1.5 text-muted-foreground hover:bg-muted"><X className="h-5 w-5" /></button>
         </div>
         <div className="p-5 space-y-3">
+          <div className="flex gap-2">
+            {(["gda", "gdc"] as const).map((c) => (
+              <button
+                key={c}
+                type="button"
+                onClick={() => setCategory(c)}
+                className={`flex-1 rounded-lg border-2 py-2 text-sm font-display font-bold transition-colors ${
+                  category === c
+                    ? "border-primary bg-primary text-primary-foreground"
+                    : "border-border text-muted-foreground hover:bg-muted"
+                }`}
+              >
+                {c.toUpperCase()}
+              </button>
+            ))}
+          </div>
           {/* Vincular evento — primeiro para auto-preencher */}
           <div>
             <label className="block text-xs font-semibold text-muted-foreground mb-1">Vincular evento do calendário</label>
@@ -205,6 +263,23 @@ const CreateSpecialEventModal = ({ onClose, onCreated }: CreateModalProps) => {
               <input type="date" value={endDate} min={startDate} onChange={(e) => setEndDate(e.target.value)} className={`${inputCls} w-full`} />
             </div>
           </div>
+          <div className="flex items-start gap-2 rounded-lg border border-border bg-muted/30 p-3">
+            <input
+              type="checkbox"
+              id="auto-create-days"
+              checked={autoCreateDays}
+              onChange={(e) => setAutoCreateDays(e.target.checked)}
+              className="mt-0.5 h-4 w-4 shrink-0 accent-primary"
+            />
+            <label htmlFor="auto-create-days" className="text-sm cursor-pointer select-none">
+              <span className="font-semibold text-foreground">Criar dias automaticamente</span>
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                {startDate && endDate
+                  ? `Serão criadas ${getDatesInRange(startDate, endDate).length} caixas, uma para cada dia entre ${fmtDate(startDate)} e ${fmtDate(endDate)}.`
+                  : "Gera uma caixa para cada dia do período acima. Desmarque para continuar adicionando os dias manualmente, como hoje."}
+              </p>
+            </label>
+          </div>
           <div>
             <label className="block text-xs font-semibold text-muted-foreground mb-1">Observações</label>
             <textarea value={notes} onChange={(e) => setNotes(e.target.value)} className={`${inputCls} w-full min-h-[70px] resize-y`} placeholder="Notas sobre o evento..." />
@@ -224,7 +299,7 @@ const CreateSpecialEventModal = ({ onClose, onCreated }: CreateModalProps) => {
 // ── Main Page ─────────────────────────────────────────────────────────────────
 
 const SpecialEventsPage = () => {
-  const { user, isAdmin, isApproved } = useAuth();
+  const { user, isAdmin } = useAuth();
 
   const [events, setEvents] = useState<SpecialEvent[]>([]);
   const [loading, setLoading] = useState(true);
@@ -236,19 +311,16 @@ const SpecialEventsPage = () => {
   const [newDayDate, setNewDayDate] = useState("");
   const [savingDay, setSavingDay] = useState(false);
 
-  // Admin: add function
-  const [addingFnTo, setAddingFnTo] = useState<string | null>(null);
-  const [newFn, setNewFn] = useState({ emoji: "⭐", name: "", hours: "", hourly_rate: "", max_monitors: "" });
-  const [newFnHoursMode, setNewFnHoursMode] = useState<"duracao" | "periodo">("duracao");
-  const [newFnPeriod, setNewFnPeriod] = useState({ start: "", end: "" });
-  const [savingFn, setSavingFn] = useState(false);
-
-  // Admin: edit function
-  const [editingFnId, setEditingFnId] = useState<string | null>(null);
-  const [editFn, setEditFn] = useState({ emoji: "", name: "", hours: "", hourly_rate: "", max_monitors: "" });
-  const [editFnHoursMode, setEditFnHoursMode] = useState<"duracao" | "periodo">("duracao");
-  const [editFnPeriod, setEditFnPeriod] = useState({ start: "", end: "" });
-  const [savingEditFn, setSavingEditFn] = useState(false);
+  // Opções de cargo/função (GDA/GDC) para os selects do admin
+  const [gdcHierarchies, setGdcHierarchies] = useState<GdcOption[]>([]);
+  const [gdcRoles, setGdcRoles] = useState<GdcOption[]>([]);
+  const [dayModalDayId, setDayModalDayId] = useState<string | null>(null);
+  const [dayModalCategory, setDayModalCategory] = useState<"gda" | "gdc">("gdc");
+  const [dayModalDate, setDayModalDate] = useState<string>("");
+  const [modalSignups, setModalSignups] = useState<DaySignupEdit[]>([]);
+  const [signupSortField, setSignupSortField] = useState<"name" | "cargo" | "funcao">("name");
+  const [signupSortDir, setSignupSortDir] = useState<"asc" | "desc">("asc");
+  const [savingModal, setSavingModal] = useState(false);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -258,12 +330,9 @@ const SpecialEventsPage = () => {
         *,
         special_event_days(
           *,
-          special_event_functions(
+          special_event_day_signups(
             *,
-            special_event_assignments(
-              *,
-              profiles:user_id(id, display_name)
-            )
+            profiles:user_id(id, display_name)
           )
         )
       `)
@@ -271,16 +340,10 @@ const SpecialEventsPage = () => {
 
     if (error) { toast.error("Erro ao carregar eventos especiais"); setLoading(false); return; }
 
-    // Sort days and functions by sort_order
     const sorted = (data ?? []).map((ev: any) => ({
       ...ev,
       special_event_days: (ev.special_event_days ?? [])
-        .sort((a: any, b: any) => a.date.localeCompare(b.date) || a.sort_order - b.sort_order)
-        .map((day: any) => ({
-          ...day,
-          special_event_functions: (day.special_event_functions ?? [])
-            .sort((a: any, b: any) => a.sort_order - b.sort_order),
-        })),
+        .sort((a: any, b: any) => a.date.localeCompare(b.date) || a.sort_order - b.sort_order),
     }));
 
     setEvents(sorted);
@@ -288,6 +351,13 @@ const SpecialEventsPage = () => {
   }, []);
 
   useEffect(() => { fetchData(); }, [fetchData]);
+
+  useEffect(() => {
+    (supabase as any).from("gdc_hierarchies").select("id, emoji, name, value_per_day, category")
+      .order("sort_order").then(({ data }: any) => setGdcHierarchies(data ?? []));
+    (supabase as any).from("gdc_roles").select("id, emoji, name, value_per_day, category")
+      .order("sort_order").then(({ data }: any) => setGdcRoles(data ?? []));
+  }, []);
 
   const toggleExpand = (id: string) =>
     setExpanded((prev) => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s; });
@@ -316,109 +386,113 @@ const SpecialEventsPage = () => {
     fetchData();
   };
 
-  // ── Admin: add function ─────────────────────────────────────────────────────
+  // ── Inscrição direta no dia ──────────────────────────────────────────────────
 
-  const handleAddFn = async (dayId: string) => {
-    if (!newFn.name.trim() || !newFn.hours || !newFn.hourly_rate) {
-      toast.error("Preencha nome, horas e valor/hora");
-      return;
-    }
-    setSavingFn(true);
-    const { error } = await (supabase as any).from("special_event_functions").insert({
-      day_id: dayId,
-      emoji: newFn.emoji || "⭐",
-      name: newFn.name.trim(),
-      hours: parseFloat(newFn.hours),
-      hourly_rate: parseFloat(newFn.hourly_rate),
-      max_monitors: newFn.max_monitors ? parseInt(newFn.max_monitors) : null,
-      sort_order: 0,
-      time_start: newFnHoursMode === "periodo" && newFnPeriod.start ? newFnPeriod.start : null,
-      time_end: newFnHoursMode === "periodo" && newFnPeriod.end ? newFnPeriod.end : null,
-    });
-    setSavingFn(false);
-    if (error) { toast.error("Erro ao adicionar função"); return; }
-    setAddingFnTo(null);
-    setNewFn({ emoji: "⭐", name: "", hours: "", hourly_rate: "", max_monitors: "" });
-    fetchData();
-  };
-
-  const handleRemoveFn = async (fnId: string) => {
-    if (!confirm("Remover esta função?")) return;
-    const { error } = await (supabase as any).from("special_event_functions").delete().eq("id", fnId);
-    if (error) { toast.error("Erro ao remover função"); return; }
-    fetchData();
-  };
-
-  const startEditFn = (fn: SefFunction) => {
-    setEditingFnId(fn.id);
-    if (fn.time_start && fn.time_end) {
-      setEditFnHoursMode("periodo");
-      setEditFnPeriod({ start: fn.time_start.slice(0, 5), end: fn.time_end.slice(0, 5) });
-    } else {
-      setEditFnHoursMode("duracao");
-      setEditFnPeriod({ start: "", end: "" });
-    }
-    setEditFn({
-      emoji: fn.emoji,
-      name: fn.name,
-      hours: fn.hours.toString(),
-      hourly_rate: fn.hourly_rate.toString(),
-      max_monitors: fn.max_monitors?.toString() ?? "",
-    });
-  };
-
-  const handleSaveEditFn = async () => {
-    if (!editFn.name.trim() || !editFn.hours || !editFn.hourly_rate) {
-      toast.error("Preencha nome, horas e valor/hora");
-      return;
-    }
-    setSavingEditFn(true);
-    const { error } = await (supabase as any).from("special_event_functions").update({
-      emoji: editFn.emoji || "⭐",
-      name: editFn.name.trim(),
-      hours: parseFloat(editFn.hours),
-      hourly_rate: parseFloat(editFn.hourly_rate),
-      max_monitors: editFn.max_monitors ? parseInt(editFn.max_monitors) : null,
-      time_start: editFnHoursMode === "periodo" && editFnPeriod.start ? editFnPeriod.start : null,
-      time_end: editFnHoursMode === "periodo" && editFnPeriod.end ? editFnPeriod.end : null,
-    }).eq("id", editingFnId);
-    setSavingEditFn(false);
-    if (error) { toast.error("Erro ao salvar função"); return; }
-    setEditingFnId(null);
-    fetchData();
-  };
-
-  // ── Assignment actions ──────────────────────────────────────────────────────
-
-  const handleVolunteer = async (functionId: string) => {
+  const handleJoinDay = async (dayId: string) => {
     if (!user) return;
-    const { error } = await (supabase as any).from("special_event_assignments").insert({
-      function_id: functionId,
+    const { error } = await (supabase as any).from("special_event_day_signups").insert({
+      day_id: dayId,
       user_id: user.id,
       status: "volunteer",
     });
     if (error) {
-      if (error.code === "23505") toast.error("Você já está inscrito nesta função");
-      else toast.error("Erro ao se voluntariar");
+      if (error.code === "23505") toast.error("Você já está inscrito neste dia");
+      else toast.error("Erro ao se inscrever");
       return;
     }
-    toast.success("Voluntariado registrado!");
+    toast.success("Inscrição registrada!");
     fetchData();
   };
 
-  const handleLeaveFunction = async (assignmentId: string) => {
-    const { error } = await (supabase as any).from("special_event_assignments").delete().eq("id", assignmentId);
+  const handleLeaveDay = async (signupId: string) => {
+    const { error } = await (supabase as any).from("special_event_day_signups").delete().eq("id", signupId);
     if (error) { toast.error("Erro ao cancelar inscrição"); return; }
     toast.success("Inscrição cancelada");
     fetchData();
   };
 
-  const handleSetStatus = async (assignmentId: string, status: "confirmed" | "rejected") => {
+  const handleUpdateMonitorsNeeded = async (dayId: string, value: string) => {
+    const num = value.trim() ? parseInt(value) : null;
     const { error } = await (supabase as any)
-      .from("special_event_assignments")
-      .update({ status })
-      .eq("id", assignmentId);
-    if (error) { toast.error("Erro ao atualizar status"); return; }
+      .from("special_event_days")
+      .update({ monitors_needed: num })
+      .eq("id", dayId);
+    if (error) toast.error("Erro ao salvar");
+    else fetchData();
+  };
+
+  const openDayModal = (day: SefDay, category: "gda" | "gdc") => {
+    setModalSignups(
+      day.special_event_day_signups.map((s) => ({
+        id: s.id,
+        user_id: s.user_id,
+        display_name: s.profiles?.display_name ?? "Monitor",
+        status: s.status,
+        hierarchy_id: s.hierarchy_id,
+        role_id_1: s.role_id_1,
+        bonus: s.bonus ?? 0,
+      }))
+    );
+    setDayModalCategory(category);
+    setDayModalDate(day.date);
+    setDayModalDayId(day.id);
+    setSignupSortField("name");
+    setSignupSortDir("asc");
+  };
+
+  const updateModalSignup = (id: string, field: keyof DaySignupEdit, value: any) => {
+    setModalSignups((prev) => prev.map((s) => (s.id === id ? { ...s, [field]: value } : s)));
+  };
+
+  const toggleSignupSort = (field: "name" | "cargo" | "funcao") => {
+    if (signupSortField === field) {
+      setSignupSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setSignupSortField(field);
+      setSignupSortDir("asc");
+    }
+  };
+
+  const handleSaveModal = async () => {
+    setSavingModal(true);
+    try {
+      await Promise.all(
+        modalSignups.map(async (edit) => {
+          const h = gdcHierarchies.find((x) => x.id === edit.hierarchy_id);
+          const r = gdcRoles.find((x) => x.id === edit.role_id_1);
+          const computed = h || r || edit.bonus > 0
+            ? (h?.value_per_day ?? 0) + (r?.value_per_day ?? 0) + edit.bonus
+            : null;
+          const { error } = await (supabase as any)
+            .from("special_event_day_signups")
+            .update({
+              status: edit.status,
+              hierarchy_id: edit.hierarchy_id || null,
+              role_id_1: edit.role_id_1 || null,
+              bonus: edit.bonus,
+              value_per_day: computed,
+            })
+            .eq("id", edit.id);
+          if (error) throw error;
+        })
+      );
+      toast.success("Escala salva!");
+      setDayModalDayId(null);
+      fetchData();
+    } catch {
+      toast.error("Erro ao salvar escala");
+    } finally {
+      setSavingModal(false);
+    }
+  };
+
+  const handleUpdateDayTime = async (dayId: string, time_start: string, time_end: string) => {
+    const { error } = await (supabase as any).from("special_event_days").update({
+      time_start: time_start || null,
+      time_end: time_end || null,
+    }).eq("id", dayId);
+    if (error) { toast.error("Erro ao salvar horário"); return; }
+    toast.success("Horário salvo!");
     fetchData();
   };
 
@@ -432,304 +506,188 @@ const SpecialEventsPage = () => {
 
   // ── Render helpers ─────────────────────────────────────────────────────────
 
-  const renderAssignment = (a: Assignment, fn: SefFunction) => {
-    const st = statusLabel[a.status] ?? statusLabel.volunteer;
-    const isOwn = a.user_id === user?.id;
-    return (
-      <div key={a.id} className="flex items-center justify-between gap-2 py-1">
-        <span className="text-sm font-medium text-foreground">{a.profiles?.display_name ?? "Monitor"}</span>
-        <div className="flex items-center gap-1.5">
-          <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${st.cls}`}>{st.label}</span>
-          {isAdmin ? (
-            <>
-              {a.status !== "confirmed" && (
-                <button onClick={() => handleSetStatus(a.id, "confirmed")}
-                  className="rounded-lg bg-camp/20 px-2 py-1 text-xs font-semibold text-camp hover:bg-camp/30" title="Escalar">
-                  <Check className="h-3 w-3" />
-                </button>
-              )}
-              {a.status !== "rejected" && (
-                <button onClick={() => handleSetStatus(a.id, "rejected")}
-                  className="rounded-lg bg-destructive/10 px-2 py-1 text-xs text-destructive hover:bg-destructive/20" title="Rejeitar">
-                  <X className="h-3 w-3" />
-                </button>
-              )}
-            </>
-          ) : isOwn && a.status === "volunteer" ? (
-            <button onClick={() => handleLeaveFunction(a.id)}
-              className="rounded-lg border border-border px-2 py-1 text-xs text-muted-foreground hover:bg-muted">
-              Cancelar
-            </button>
-          ) : null}
-        </div>
-      </div>
-    );
-  };
+  const renderDay = (day: SefDay, category: "gda" | "gdc") => {
+    const mySignup = day.special_event_day_signups.find((s) => s.user_id === user?.id);
+    const overnight = !!(day.time_start && day.time_end && day.time_end <= day.time_start);
+    const totalCount = day.special_event_day_signups.length;
 
-  const renderFunction = (fn: SefFunction) => {
-    const total = fn.hours * fn.hourly_rate;
-    const confirmedCount = fn.special_event_assignments.filter((a) => a.status === "confirmed").length;
-    const myAssignment = fn.special_event_assignments.find((a) => a.user_id === user?.id);
-    const isFull = fn.max_monitors != null && confirmedCount >= fn.max_monitors;
+    if (isAdmin) {
+      const confirmedSignups = day.special_event_day_signups.filter((s) => s.status === "confirmed");
+      const totalValue = confirmedSignups.reduce((sum, s) => sum + (s.value_per_day ?? 0), 0);
 
-    if (isAdmin && editingFnId === fn.id) {
       return (
-        <div key={fn.id} className="rounded-lg border border-primary/30 bg-primary/5 p-3 space-y-2">
-          <div className="flex gap-2">
-            <input value={editFn.emoji} onChange={(e) => setEditFn((p) => ({ ...p, emoji: e.target.value }))}
-              className={`${inputCls} w-14 text-center text-lg`} maxLength={2} />
-            <input value={editFn.name} onChange={(e) => setEditFn((p) => ({ ...p, name: e.target.value }))}
-              className={`${inputCls} flex-1`} placeholder="Nome da função" />
-          </div>
-          <div className="flex gap-2 flex-wrap items-start">
-            <div className="flex flex-col gap-1">
-              <div className="flex items-center gap-1">
-                <span className="text-xs text-muted-foreground">Duração:</span>
-                <button type="button" onClick={() => setEditFnHoursMode("duracao")}
-                  className={`rounded px-2 py-0.5 text-xs font-medium transition-colors ${editFnHoursMode === "duracao" ? "bg-primary text-primary-foreground" : "border border-border text-muted-foreground hover:bg-muted"}`}>
-                  Horas
-                </button>
-                <button type="button" onClick={() => setEditFnHoursMode("periodo")}
-                  className={`rounded px-2 py-0.5 text-xs font-medium transition-colors ${editFnHoursMode === "periodo" ? "bg-primary text-primary-foreground" : "border border-border text-muted-foreground hover:bg-muted"}`}>
-                  Período
-                </button>
-              </div>
-              {editFnHoursMode === "duracao" ? (
-                <input type="number" min="0" step="0.5" value={editFn.hours}
-                  onChange={(e) => setEditFn((p) => ({ ...p, hours: e.target.value }))}
-                  className={`${inputCls} w-16 text-center`} />
-              ) : (
-                <div className="flex items-center gap-1">
-                  <input type="time" value={editFnPeriod.start}
-                    onChange={(e) => {
-                      const s = e.target.value;
-                      setEditFnPeriod((p) => ({ ...p, start: s }));
-                      const h = computePeriodHours(s, editFnPeriod.end);
-                      if (h) setEditFn((p) => ({ ...p, hours: h }));
-                    }}
-                    className={`${inputCls} w-24 text-center text-xs`} />
-                  <span className="text-xs text-muted-foreground">→</span>
-                  <input type="time" value={editFnPeriod.end}
-                    onChange={(e) => {
-                      const end = e.target.value;
-                      setEditFnPeriod((p) => ({ ...p, end }));
-                      const h = computePeriodHours(editFnPeriod.start, end);
-                      if (h) setEditFn((p) => ({ ...p, hours: h }));
-                    }}
-                    className={`${inputCls} w-24 text-center text-xs`} />
-                  {editFn.hours && (
-                    <span className="text-xs font-semibold text-foreground">{editFn.hours}h</span>
-                  )}
-                </div>
-              )}
-            </div>
-            <div className="flex items-center gap-1">
-              <span className="text-xs text-muted-foreground">R$/h:</span>
-              <input type="number" min="0" step="0.01" value={editFn.hourly_rate} onChange={(e) => setEditFn((p) => ({ ...p, hourly_rate: e.target.value }))}
-                className={`${inputCls} w-20 text-center`} />
-            </div>
-            <div className="flex items-center gap-1">
-              <span className="text-xs text-muted-foreground">Vagas:</span>
-              <input type="number" min="1" value={editFn.max_monitors} onChange={(e) => setEditFn((p) => ({ ...p, max_monitors: e.target.value }))}
-                className={`${inputCls} w-16 text-center`} placeholder="∞" />
-            </div>
-          </div>
-          <div className="flex gap-2">
-            <button onClick={handleSaveEditFn} disabled={savingEditFn}
-              className="flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50">
-              {savingEditFn ? <Loader2 className="h-3 w-3 animate-spin" /> : <Save className="h-3 w-3" />} Salvar
+        <div
+          key={day.id}
+          className="rounded-lg border border-border/60 bg-muted/30 p-3 space-y-2 cursor-pointer hover:border-primary/40 hover:bg-primary/5 transition-colors"
+          onClick={() => openDayModal(day, category)}
+        >
+          {/* Cabeçalho */}
+          <div className="flex items-center justify-between">
+            <h4 className="font-display font-semibold text-sm text-foreground">
+              📅 {fmtDateLong(day.date)}
+            </h4>
+            <button
+              onClick={(e) => { e.stopPropagation(); handleRemoveDay(day.id); }}
+              className="rounded-lg p-1 text-destructive hover:bg-destructive/10"
+              title="Remover dia"
+            >
+              <Trash2 className="h-3.5 w-3.5" />
             </button>
-            <button onClick={() => setEditingFnId(null)} className="rounded-lg border border-border px-3 py-1.5 text-xs text-muted-foreground hover:bg-muted">
-              Cancelar
-            </button>
+          </div>
+
+          {/* Horário */}
+          <div className="flex flex-col" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center gap-1 flex-nowrap">
+              <input type="time" defaultValue={day.time_start?.slice(0, 5) ?? ""}
+                onBlur={(e) => handleUpdateDayTime(day.id, e.target.value, day.time_end?.slice(0, 5) ?? "")}
+                className="w-[4.7rem] shrink-0 rounded-md border border-input bg-background px-1 py-1 text-[11px] outline-none focus:ring-1 focus:ring-ring" />
+              <span className="text-[11px] text-muted-foreground shrink-0">até</span>
+              <input type="time" defaultValue={day.time_end?.slice(0, 5) ?? ""}
+                onBlur={(e) => handleUpdateDayTime(day.id, day.time_start?.slice(0, 5) ?? "", e.target.value)}
+                className="w-[4.7rem] shrink-0 rounded-md border border-input bg-background px-1 py-1 text-[11px] outline-none focus:ring-1 focus:ring-ring" />
+            </div>
+            {overnight && (
+              <span className="text-[10px] text-muted-foreground italic self-end">(dia seguinte)</span>
+            )}
+          </div>
+
+          {/* Info de monitores */}
+          <div className="border-t border-border/60 pt-2 space-y-1.5">
+            <p className="text-center text-sm font-semibold text-foreground">👥 Monitores</p>
+            <div className="flex items-center justify-between text-xs" onClick={(e) => e.stopPropagation()}>
+              <span className="text-muted-foreground">Necessários:</span>
+              <input
+                type="number"
+                min="0"
+                defaultValue={day.monitors_needed ?? ""}
+                onBlur={(e) => handleUpdateMonitorsNeeded(day.id, e.target.value)}
+                onClick={(e) => e.stopPropagation()}
+                className="w-10 rounded border border-input bg-background px-1 py-0.5 text-xs text-center outline-none focus:ring-1 focus:ring-ring"
+                placeholder="—"
+              />
+            </div>
+            <div className="flex items-center justify-between text-xs">
+              <span className="text-muted-foreground">Escalados/Inscritos:</span>
+              <span className="font-semibold text-foreground">
+                {confirmedSignups.length}/{totalCount}
+              </span>
+            </div>
+            <div className="flex items-center justify-between text-xs">
+              <span className="text-muted-foreground">Valor total:</span>
+              <span className="font-semibold text-foreground">
+                {totalValue > 0 ? `R$ ${totalValue.toFixed(2)}` : "—"}
+              </span>
+            </div>
           </div>
         </div>
       );
     }
 
+    // Monitor view
+    const myHier = mySignup ? gdcHierarchies.find((h) => h.id === mySignup.hierarchy_id) : null;
+    const myRole = mySignup ? gdcRoles.find((r) => r.id === mySignup.role_id_1) : null;
+
+    const cardCls = !mySignup
+      ? "rounded-lg border border-border/60 bg-muted/30 p-3 space-y-1.5 relative"
+      : mySignup.status === "confirmed"
+        ? "rounded-lg border border-green-300 bg-green-50 dark:bg-green-950/40 dark:border-green-800 p-3 space-y-1.5 relative"
+        : "rounded-lg border border-yellow-300 bg-yellow-50 dark:bg-yellow-950/40 dark:border-yellow-800 p-3 space-y-1.5 relative";
+
     return (
-      <div key={fn.id} className="rounded-lg border border-border bg-card p-3">
-        {/* Function header */}
-        <div className="flex items-start justify-between gap-2 mb-2">
-          <div className="min-w-0">
-            <div className="flex items-center gap-1.5 flex-wrap">
-              <span className="text-base">{fn.emoji}</span>
-              <span className="font-semibold text-sm text-foreground">{fn.name}</span>
-              <span className="text-xs text-muted-foreground">
-                {fn.time_start && fn.time_end
-                  ? `${fn.time_start.slice(0, 5)} – ${fn.time_end.slice(0, 5)} (${fn.hours}h)`
-                  : `${fn.hours}h`}
-              </span>
-              {isAdmin && (
-                <>
-                  <span className="text-xs text-muted-foreground">·</span>
-                  <span className="text-xs text-muted-foreground">R$ {fn.hourly_rate.toFixed(2)}/h</span>
-                </>
-              )}
-            </div>
-            <div className="mt-0.5 flex items-center gap-2 flex-wrap">
-              <span className="text-sm font-bold text-foreground">
-                {isAdmin ? `Total: R$ ${total.toFixed(2)}` : `R$ ${total.toFixed(2)}`}
-              </span>
-              {fn.max_monitors != null && (
-                <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${isFull ? "bg-destructive/10 text-destructive" : "bg-muted text-muted-foreground"}`}>
-                  <Users className="inline h-3 w-3 mr-0.5" />
-                  {confirmedCount}/{fn.max_monitors} {isFull ? "· Lotado" : ""}
-                </span>
-              )}
-            </div>
-          </div>
-          {isAdmin && (
-            <div className="flex gap-1 shrink-0">
-              <button onClick={() => startEditFn(fn)} className="rounded-lg p-1.5 text-muted-foreground hover:bg-muted" title="Editar">
-                <Pencil className="h-3.5 w-3.5" />
-              </button>
-              <button onClick={() => handleRemoveFn(fn.id)} className="rounded-lg p-1.5 text-destructive hover:bg-destructive/10" title="Remover">
-                <Trash2 className="h-3.5 w-3.5" />
-              </button>
-            </div>
-          )}
-        </div>
+      <div key={day.id} className={cardCls}>
+        {mySignup?.status === "confirmed" && (
+          <CheckCircle2 className="absolute top-2 right-2 h-4 w-4 text-green-500" />
+        )}
+        <h4 className="font-display font-semibold text-sm text-foreground pr-6">
+          📅 {fmtDateLong(day.date)}
+        </h4>
+        <p className="text-xs text-muted-foreground">
+          ⏰ {day.time_start && day.time_end
+            ? `${day.time_start.slice(0, 5)} — ${day.time_end.slice(0, 5)}${overnight ? " (dia seguinte)" : ""}`
+            : "Horário a definir"}
+        </p>
 
-        {/* Assignments */}
-        {fn.special_event_assignments.length > 0 && (
-          <div className="mt-2 border-t border-border/60 pt-2 space-y-0.5">
-            {fn.special_event_assignments.map((a) => renderAssignment(a, fn))}
+        {mySignup && (
+          <div className="border-t border-border/60 pt-1.5 space-y-0.5">
+            <p className="text-[11px] text-muted-foreground">
+              <span className="font-semibold text-foreground">Cargo:</span>{" "}
+              {myHier ? `${myHier.emoji} ${myHier.name}` : "A escalar"}
+            </p>
+            <p className="text-[11px] text-muted-foreground">
+              <span className="font-semibold text-foreground">Função:</span>{" "}
+              {myRole ? `${myRole.emoji} ${myRole.name}` : "A escalar"}
+            </p>
+            <p className="text-[11px] text-muted-foreground">
+              <span className="font-semibold text-foreground">Valor/dia:</span>{" "}
+              {mySignup.value_per_day != null ? `R$ ${mySignup.value_per_day.toFixed(2)}` : "A definir"}
+            </p>
           </div>
         )}
 
-        {/* Monitor: volunteer button */}
-        {!isAdmin && !myAssignment && !isFull && (
-          <button onClick={() => handleVolunteer(fn.id)}
-            className="mt-2 flex items-center gap-1.5 rounded-lg border-2 border-dashed border-primary/40 px-3 py-1.5 text-xs font-semibold text-primary hover:border-primary hover:bg-primary/5 transition-colors">
-            <Plus className="h-3.5 w-3.5" /> Me voluntariar
+        {!mySignup ? (
+          <button onClick={() => handleJoinDay(day.id)}
+            className="flex w-full items-center justify-center gap-1.5 rounded-lg border-2 border-dashed border-primary/40 px-3 py-1.5 text-xs font-semibold text-primary hover:border-primary hover:bg-primary/5 transition-colors">
+            <Plus className="h-3.5 w-3.5" /> Me inscrever
           </button>
-        )}
-        {!isAdmin && isFull && !myAssignment && (
-          <p className="mt-2 text-xs text-muted-foreground">Vagas esgotadas</p>
-        )}
+        ) : mySignup.status === "volunteer" ? (
+          <button onClick={() => handleLeaveDay(mySignup.id)}
+            className="flex w-full items-center justify-center gap-1 rounded-lg border border-yellow-300 px-2 py-1 text-xs text-yellow-700 hover:bg-yellow-100 transition-colors">
+            Cancelar inscrição
+          </button>
+        ) : null}
       </div>
     );
   };
 
-  const renderDay = (day: SefDay) => (
-    <div key={day.id} className="rounded-lg border border-border/60 bg-muted/30 p-3">
-      {/* Day header */}
-      <div className="flex items-center justify-between mb-2">
-        <h4 className="font-display font-semibold text-sm text-foreground">
-          📅 {fmtDateLong(day.date)}
-        </h4>
-        {isAdmin && (
-          <button onClick={() => handleRemoveDay(day.id)}
-            className="rounded-lg p-1 text-destructive hover:bg-destructive/10" title="Remover dia">
-            <Trash2 className="h-3.5 w-3.5" />
-          </button>
-        )}
-      </div>
-
-      {/* Functions list */}
-      <div className="space-y-2">
-        {day.special_event_functions.map(renderFunction)}
-      </div>
-
-      {/* Admin: add function */}
-      {isAdmin && (
-        addingFnTo === day.id ? (
-          <div className="mt-2 rounded-lg border border-primary/30 bg-primary/5 p-3 space-y-2">
-            <div className="flex gap-2">
-              <input value={newFn.emoji} onChange={(e) => setNewFn((p) => ({ ...p, emoji: e.target.value }))}
-                className={`${inputCls} w-14 text-center text-lg`} maxLength={2} />
-              <input value={newFn.name} onChange={(e) => setNewFn((p) => ({ ...p, name: e.target.value }))}
-                className={`${inputCls} flex-1`} placeholder="Nome da função" />
-            </div>
-            <div className="flex gap-2 flex-wrap items-start">
-              <div className="flex flex-col gap-1">
-                <div className="flex items-center gap-1">
-                  <span className="text-xs text-muted-foreground">Duração:</span>
-                  <button type="button" onClick={() => setNewFnHoursMode("duracao")}
-                    className={`rounded px-2 py-0.5 text-xs font-medium transition-colors ${newFnHoursMode === "duracao" ? "bg-primary text-primary-foreground" : "border border-border text-muted-foreground hover:bg-muted"}`}>
-                    Horas
-                  </button>
-                  <button type="button" onClick={() => setNewFnHoursMode("periodo")}
-                    className={`rounded px-2 py-0.5 text-xs font-medium transition-colors ${newFnHoursMode === "periodo" ? "bg-primary text-primary-foreground" : "border border-border text-muted-foreground hover:bg-muted"}`}>
-                    Período
-                  </button>
-                </div>
-                {newFnHoursMode === "duracao" ? (
-                  <input type="number" min="0" step="0.5" value={newFn.hours}
-                    onChange={(e) => setNewFn((p) => ({ ...p, hours: e.target.value }))}
-                    className={`${inputCls} w-16 text-center`} placeholder="8" />
-                ) : (
-                  <div className="flex items-center gap-1">
-                    <input type="time" value={newFnPeriod.start}
-                      onChange={(e) => {
-                        const s = e.target.value;
-                        setNewFnPeriod((p) => ({ ...p, start: s }));
-                        const h = computePeriodHours(s, newFnPeriod.end);
-                        if (h) setNewFn((p) => ({ ...p, hours: h }));
-                      }}
-                      className={`${inputCls} w-24 text-center text-xs`} />
-                    <span className="text-xs text-muted-foreground">→</span>
-                    <input type="time" value={newFnPeriod.end}
-                      onChange={(e) => {
-                        const end = e.target.value;
-                        setNewFnPeriod((p) => ({ ...p, end }));
-                        const h = computePeriodHours(newFnPeriod.start, end);
-                        if (h) setNewFn((p) => ({ ...p, hours: h }));
-                      }}
-                      className={`${inputCls} w-24 text-center text-xs`} />
-                    {newFn.hours && (
-                      <span className="text-xs font-semibold text-foreground">{newFn.hours}h</span>
-                    )}
-                  </div>
-                )}
-              </div>
-              <div className="flex items-center gap-1">
-                <span className="text-xs text-muted-foreground">R$/h:</span>
-                <input type="number" min="0" step="0.01" value={newFn.hourly_rate} onChange={(e) => setNewFn((p) => ({ ...p, hourly_rate: e.target.value }))}
-                  className={`${inputCls} w-20 text-center`} placeholder="30" />
-              </div>
-              <div className="flex items-center gap-1">
-                <span className="text-xs text-muted-foreground">Vagas:</span>
-                <input type="number" min="1" value={newFn.max_monitors} onChange={(e) => setNewFn((p) => ({ ...p, max_monitors: e.target.value }))}
-                  className={`${inputCls} w-16 text-center`} placeholder="∞" />
-              </div>
-            </div>
-            <div className="flex gap-2">
-              <button onClick={() => handleAddFn(day.id)} disabled={savingFn}
-                className="flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50">
-                {savingFn ? <Loader2 className="h-3 w-3 animate-spin" /> : <Plus className="h-3 w-3" />} Adicionar
-              </button>
-              <button onClick={() => setAddingFnTo(null)} className="rounded-lg border border-border px-3 py-1.5 text-xs text-muted-foreground hover:bg-muted">
-                Cancelar
-              </button>
-            </div>
-          </div>
-        ) : (
-          <button onClick={() => { setAddingFnTo(day.id); setNewFn({ emoji: "⭐", name: "", hours: "", hourly_rate: "", max_monitors: "" }); setNewFnHoursMode("duracao"); setNewFnPeriod({ start: "", end: "" }); }}
-            className="mt-2 flex w-full items-center gap-1.5 rounded-lg border border-dashed border-border px-3 py-1.5 text-xs text-muted-foreground hover:bg-muted transition-colors">
-            <Plus className="h-3.5 w-3.5" /> Adicionar função
-          </button>
-        )
-      )}
-    </div>
-  );
-
   const renderSpecialEvent = (ev: SpecialEvent) => {
     const isOpen = expanded.has(ev.id);
+
+    const allSignups = ev.special_event_days.flatMap((d) => d.special_event_day_signups);
+
+    const myTotal = !isAdmin
+      ? allSignups
+          .filter((s) => s.user_id === user?.id && s.status === "confirmed" && s.value_per_day != null)
+          .reduce((sum, s) => sum + (s.value_per_day ?? 0), 0)
+      : 0;
+
+    const adminTotal = isAdmin
+      ? allSignups
+          .filter((s) => s.status === "confirmed" && s.value_per_day != null)
+          .reduce((sum, s) => sum + (s.value_per_day ?? 0), 0)
+      : 0;
+
     return (
       <div key={ev.id} className="rounded-xl border-2 border-border bg-card shadow-sm">
         {/* Event header */}
         <div className="flex items-start justify-between gap-3 p-4">
           <div className="min-w-0 flex-1">
-            <h3 className="font-display text-base sm:text-lg font-bold text-foreground">
+            <h3 className="font-display text-base sm:text-lg font-bold text-foreground flex items-center gap-2">
               ⭐ {ev.title}
+              <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-bold text-primary uppercase">
+                {ev.category}
+              </span>
             </h3>
             <p className="text-xs text-muted-foreground mt-0.5">
               {fmtDate(ev.start_date)} — {fmtDate(ev.end_date)}
               {ev.notes && <> · <span className="italic">{ev.notes}</span></>}
             </p>
           </div>
+          {isOpen && (
+            <div className="shrink-0 text-center px-2">
+              {!isAdmin && myTotal > 0 && (
+                <>
+                  <p className="text-[10px] text-muted-foreground leading-tight">A receber</p>
+                  <p className="text-sm font-bold text-primary leading-tight">R$ {myTotal.toFixed(2)}</p>
+                </>
+              )}
+              {isAdmin && adminTotal > 0 && (
+                <>
+                  <p className="text-[10px] text-muted-foreground leading-tight">Total a pagar</p>
+                  <p className="text-sm font-bold text-primary leading-tight">R$ {adminTotal.toFixed(2)}</p>
+                </>
+              )}
+            </div>
+          )}
           <div className="flex items-center gap-1 shrink-0">
             {isAdmin && (
               <button onClick={() => handleRemoveSpecialEvent(ev.id)}
@@ -740,7 +698,7 @@ const SpecialEventsPage = () => {
             <button onClick={() => toggleExpand(ev.id)}
               className="flex items-center gap-1 rounded-lg border border-border px-2.5 py-1.5 text-xs font-semibold text-muted-foreground hover:bg-muted transition-colors">
               {isOpen ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
-              {isOpen ? "Fechar" : "Expandir"}
+              {isOpen ? "Retrair" : "Expandir"}
             </button>
           </div>
         </div>
@@ -752,7 +710,9 @@ const SpecialEventsPage = () => {
               <p className="text-sm text-muted-foreground text-center py-4">Nenhum dia cadastrado ainda.</p>
             )}
 
-            {ev.special_event_days.map(renderDay)}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              {ev.special_event_days.map((day) => renderDay(day, ev.category))}
+            </div>
 
             {/* Admin: add day */}
             {isAdmin && (
@@ -860,6 +820,139 @@ const SpecialEventsPage = () => {
           onCreated={fetchData}
         />
       )}
+
+      {/* Admin: escalar monitores modal */}
+      <Dialog open={!!dayModalDayId} onOpenChange={(open) => { if (!open) setDayModalDayId(null); }}>
+        <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="font-display">
+              📅 {fmtDateLong(dayModalDate)} — Escalar Monitores
+            </DialogTitle>
+          </DialogHeader>
+          {(() => {
+            const hierOptions = gdcHierarchies.filter((h) => h.category === dayModalCategory);
+            const roleOptions = gdcRoles.filter((r) => r.category === dayModalCategory);
+
+            const sorted = [...modalSignups].sort((a, b) => {
+              let va = "", vb = "";
+              if (signupSortField === "name") { va = a.display_name; vb = b.display_name; }
+              else if (signupSortField === "cargo") {
+                va = hierOptions.find((h) => h.id === a.hierarchy_id)?.name ?? "";
+                vb = hierOptions.find((h) => h.id === b.hierarchy_id)?.name ?? "";
+              } else {
+                va = roleOptions.find((r) => r.id === a.role_id_1)?.name ?? "";
+                vb = roleOptions.find((r) => r.id === b.role_id_1)?.name ?? "";
+              }
+              return signupSortDir === "asc" ? va.localeCompare(vb) : vb.localeCompare(va);
+            });
+
+            const sortBtn = (field: "name" | "cargo" | "funcao", label: string) => (
+              <button
+                onClick={() => toggleSignupSort(field)}
+                className="flex items-center gap-1 text-xs font-semibold text-muted-foreground hover:text-foreground transition-colors"
+              >
+                {label}
+                {signupSortField === field
+                  ? signupSortDir === "asc" ? <ChevronUp className="h-3 w-3" /> : <ArrowUpDown className="h-3 w-3" />
+                  : <ArrowUpDown className="h-3 w-3 opacity-40" />}
+              </button>
+            );
+
+            return (
+              <div className="space-y-3">
+                {modalSignups.length === 0 ? (
+                  <p className="text-sm text-muted-foreground text-center py-6">Nenhum monitor inscrito neste dia.</p>
+                ) : (
+                  <>
+                    <div className="flex gap-2 pb-1.5 border-b border-border">
+                      <div className="w-6 shrink-0"></div>
+                      <div className="w-28 shrink-0">{sortBtn("name", "Monitor")}</div>
+                      <div className="flex-1">{sortBtn("cargo", "Cargo")}</div>
+                      <div className="flex-1">{sortBtn("funcao", "Função")}</div>
+                      <div className="w-20 shrink-0 text-xs font-semibold text-muted-foreground">Bônus</div>
+                      <div className="w-20 shrink-0 text-xs font-semibold text-muted-foreground">Valor/dia</div>
+                    </div>
+                    <div className="space-y-2">
+                      {sorted.map((s) => {
+                        const h = hierOptions.find((x) => x.id === s.hierarchy_id);
+                        const r = roleOptions.find((x) => x.id === s.role_id_1);
+                        const total = (h?.value_per_day ?? 0) + (r?.value_per_day ?? 0) + s.bonus;
+                        return (
+                          <div key={s.id} className="flex items-center gap-2">
+                            <div className="w-6 shrink-0">
+                              <input
+                                type="checkbox"
+                                checked={s.status === "confirmed"}
+                                onChange={(e) =>
+                                  updateModalSignup(s.id, "status", e.target.checked ? "confirmed" : "volunteer")
+                                }
+                                className="h-4 w-4 cursor-pointer accent-primary"
+                              />
+                            </div>
+                            <div className="w-28 shrink-0">
+                              <p className="text-xs font-semibold text-foreground truncate">{s.display_name}</p>
+                            </div>
+                            <div className="flex-1">
+                              <select
+                                value={s.hierarchy_id ?? ""}
+                                onChange={(e) => updateModalSignup(s.id, "hierarchy_id", e.target.value || null)}
+                                className="w-full rounded-md border border-input bg-background px-1.5 py-1 text-[11px] outline-none focus:ring-1 focus:ring-ring"
+                              >
+                                <option value="">— Cargo —</option>
+                                {hierOptions.map((hOpt) => (
+                                  <option key={hOpt.id} value={hOpt.id}>{hOpt.emoji} {hOpt.name}</option>
+                                ))}
+                              </select>
+                            </div>
+                            <div className="flex-1">
+                              <select
+                                value={s.role_id_1 ?? ""}
+                                onChange={(e) => updateModalSignup(s.id, "role_id_1", e.target.value || null)}
+                                className="w-full rounded-md border border-input bg-background px-1.5 py-1 text-[11px] outline-none focus:ring-1 focus:ring-ring"
+                              >
+                                <option value="">— Função —</option>
+                                {roleOptions.map((rOpt) => (
+                                  <option key={rOpt.id} value={rOpt.id}>{rOpt.emoji} {rOpt.name}</option>
+                                ))}
+                              </select>
+                            </div>
+                            <div className="w-20 shrink-0">
+                              <div className="flex items-center gap-1">
+                                <span className="text-xs text-muted-foreground shrink-0">R$</span>
+                                <input
+                                  type="number"
+                                  min="0"
+                                  step="0.01"
+                                  value={s.bonus || ""}
+                                  onChange={(e) =>
+                                    updateModalSignup(s.id, "bonus", parseFloat(e.target.value) || 0)
+                                  }
+                                  className="w-14 rounded border border-input bg-background px-1.5 py-1 text-[11px] outline-none focus:ring-1 focus:ring-ring"
+                                  placeholder="0,00"
+                                />
+                              </div>
+                            </div>
+                            <div className="w-20 shrink-0 text-xs font-semibold text-foreground whitespace-nowrap">
+                              {total > 0 ? `R$ ${total.toFixed(2)}` : "—"}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </>
+                )}
+                <div className="flex justify-end gap-2 pt-2 border-t border-border">
+                  <Button variant="outline" onClick={() => setDayModalDayId(null)}>Cancelar</Button>
+                  <Button onClick={handleSaveModal} disabled={savingModal || modalSignups.length === 0}>
+                    {savingModal ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <Check className="h-4 w-4 mr-1" />}
+                    Salvar Escala
+                  </Button>
+                </div>
+              </div>
+            );
+          })()}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

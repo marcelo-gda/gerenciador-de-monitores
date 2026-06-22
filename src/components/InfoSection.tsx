@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import MasterSettings from "@/components/MasterSettings";
+import GdcRatesManager from "@/components/GdcRatesManager";
 
 interface InfoSectionData {
   id: string;
@@ -17,6 +18,7 @@ interface InfoSectionData {
   content: string;
   sort_order: number;
   visible_to: string[];
+  category: "gda" | "gdc";
 }
 
 interface Hierarchy {
@@ -24,6 +26,16 @@ interface Hierarchy {
   emoji: string;
   name: string;
   slug: string;
+  description?: string | null;
+}
+
+interface RoleItem {
+  id: string;
+  emoji: string;
+  name: string;
+  description?: string | null;
+  fixed_value?: number | null;
+  uses_junior_rate?: boolean;
 }
 
 const toSlug = (title: string) =>
@@ -38,6 +50,8 @@ const InfoSection = () => {
   const { isAdmin, user } = useAuth();
   const [sections, setSections] = useState<InfoSectionData[]>([]);
   const [hierarchies, setHierarchies] = useState<Hierarchy[]>([]);
+  const [roles, setRoles] = useState<RoleItem[]>([]);
+  const [viewCategory, setViewCategory] = useState<"gda" | "gdc">("gda");
   const [userSlugSet, setUserSlugSet] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
 
@@ -65,7 +79,7 @@ const InfoSection = () => {
       .from("info_sections")
       .select("*")
       .order("sort_order", { ascending: true });
-    if (data) setSections(data as InfoSectionData[]);
+    if (data) setSections(data as unknown as InfoSectionData[]);
     setLoading(false);
   };
 
@@ -73,9 +87,14 @@ const InfoSection = () => {
     fetchSections();
     supabase
       .from("hierarchies")
-      .select("id, emoji, name, slug")
+      .select("id, emoji, name, slug, description")
       .order("sort_order", { ascending: true })
       .then(({ data }) => { if (data) setHierarchies(data); });
+    supabase
+      .from("roles")
+      .select("id, emoji, name, description, fixed_value, uses_junior_rate")
+      .order("sort_order", { ascending: true })
+      .then(({ data }) => { if (data) setRoles(data as any); });
   }, []);
 
   // Map user's hierarchy_ids → slugs for visibility filtering
@@ -160,6 +179,7 @@ const InfoSection = () => {
       content: newForm.content,
       sort_order: maxOrder + 1,
       visible_to: newForm.visible_to,
+      category: viewCategory,
     });
     if (error) toast.error("Erro ao adicionar painel");
     else {
@@ -185,10 +205,32 @@ const InfoSection = () => {
     );
   }
 
-  const visibleSections = sections.filter(canSee).filter((s) => s.section_key !== "cargos");
+  const visibleSections = sections
+    .filter(canSee)
+    .filter((s) => s.section_key !== "cargos")
+    .filter((s) => (s.category ?? "gda") === viewCategory);
 
   return (
     <section className="mx-auto max-w-3xl space-y-2.5">
+      {/* Toggle GDA / GDC */}
+      <div className="flex gap-2 rounded-xl border-2 border-primary/30 bg-card p-2">
+        {(["gda", "gdc"] as const).map((c) => (
+          <button
+            key={c}
+            onClick={() => setViewCategory(c)}
+            className={`flex-1 rounded-lg border-2 py-3 text-base font-display font-extrabold transition-colors ${
+              viewCategory === c
+                ? "border-primary bg-primary text-primary-foreground shadow-sm"
+                : "border-border bg-background text-muted-foreground hover:border-primary/50 hover:text-foreground"
+            }`}
+          >
+            {c.toUpperCase()}
+          </button>
+        ))}
+      </div>
+
+      {viewCategory === "gdc" && <GdcRatesManager isAdmin={isAdmin} category="gdc" />}
+
       {visibleSections.map((s) => {
         const isEditing = editingId === s.id;
         const isExpanded = expandedId === s.id;
@@ -313,7 +355,36 @@ const InfoSection = () => {
                     <p className="font-body text-sm leading-relaxed text-card-foreground/80 whitespace-pre-wrap pt-3">
                       {s.content || <span className="italic text-muted-foreground">Sem conteúdo.</span>}
                     </p>
-                    {s.section_key === "cache" && <MasterSettings readOnly={true} />}
+                    {s.section_key === "cache" && (
+                      <>
+                        <MasterSettings readOnly={true} />
+                        <div className="space-y-3 pt-2">
+                          <div className="space-y-2">
+                            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">🏅 Hierarquias</p>
+                            {hierarchies.map((h) => (
+                              <div key={h.id} className="rounded-lg border border-border bg-background p-2.5">
+                                <p className="text-sm font-bold text-foreground">{h.emoji} {h.name}</p>
+                                {h.description && <p className="mt-0.5 text-xs text-muted-foreground">{h.description}</p>}
+                              </div>
+                            ))}
+                          </div>
+                          <div className="space-y-2">
+                            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">⭐ Funções Especiais</p>
+                            {roles.map((r) => (
+                              <div key={r.id} className="rounded-lg border border-border bg-background p-2.5">
+                                <p className="text-sm font-bold text-foreground">{r.emoji} {r.name}</p>
+                                {r.description && <p className="mt-0.5 text-xs text-muted-foreground">{r.description}</p>}
+                                {r.fixed_value != null && (
+                                  <span className="mt-1 inline-block rounded-full border border-primary/30 bg-primary/10 px-2 py-0.5 text-xs font-semibold text-primary">
+                                    + R$ {r.fixed_value.toFixed(2)} fixo
+                                  </span>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      </>
+                    )}
                   </>
                 )}
               </div>
