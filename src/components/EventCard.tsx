@@ -60,6 +60,7 @@ interface EventData {
 interface EventCardProps {
   event: EventData;
   onRefresh: () => void;
+  isSpecialEvent?: boolean;
 }
 
 const typeStyles: Record<string, string> = {
@@ -102,7 +103,7 @@ function getShortName(displayName: string, nickname?: string | null): string {
   return parts[0] + ' ' + parts[1];
 }
 
-const EventCard = ({ event, onRefresh }: EventCardProps) => {
+const EventCard = ({ event, onRefresh, isSpecialEvent = false }: EventCardProps) => {
   const { user, isAdmin } = useAuth();
   const [showJoinDialog, setShowJoinDialog] = useState(false);
   const [showFinalize, setShowFinalize] = useState(false);
@@ -265,6 +266,11 @@ const EventCard = ({ event, onRefresh }: EventCardProps) => {
 
           {/* Edit button + Date badge */}
           <div className="flex items-center gap-1.5 shrink-0">
+            {isSpecialEvent && (
+              <span className="inline-flex items-center gap-1 rounded-full border border-yellow-300 bg-yellow-100 px-2.5 py-1 text-[11px] font-semibold text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400 dark:border-yellow-700">
+                ⭐ Evento Especial
+              </span>
+            )}
             {isAdmin && (
               <button
                 onClick={() => setShowEditModal(true)}
@@ -434,11 +440,17 @@ const EventCard = ({ event, onRefresh }: EventCardProps) => {
               🕐 Inscrições abrem em {diffDays - 30} dia{diffDays - 30 !== 1 ? "s" : ""}
             </button>
           )}
-          {canJoin && (
+          {canJoin && !isSpecialEvent && (
             <button onClick={handleJoin}
               className="flex items-center gap-1.5 rounded-lg border-2 border-dashed border-primary/40 px-4 py-2 text-sm font-semibold text-primary transition-colors hover:border-primary hover:bg-primary/5">
               <Plus className="h-4 w-4" />Entrar na escala
             </button>
+          )}
+          {canJoin && isSpecialEvent && (
+            <div className="rounded-lg border border-yellow-300 bg-yellow-50 dark:bg-yellow-900/20 px-3 py-2 text-xs text-yellow-700 dark:text-yellow-400">
+              <p className="font-semibold">⭐ Este é um Evento Especial</p>
+              <p className="mt-0.5 text-yellow-600 dark:text-yellow-500">ℹ Acesse a aba Eventos Especiais para ver detalhes e se voluntariar</p>
+            </div>
           )}
           {canLeave && (
             <button onClick={handleLeave}

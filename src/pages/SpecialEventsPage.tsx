@@ -299,7 +299,8 @@ const CreateSpecialEventModal = ({ onClose, onCreated }: CreateModalProps) => {
 // ── Main Page ─────────────────────────────────────────────────────────────────
 
 const SpecialEventsPage = () => {
-  const { user, isAdmin } = useAuth();
+  const { user, isMasterAdmin, isApproved } = useAuth();
+  const isAdmin = isMasterAdmin; // admins comuns veem a view de monitor
 
   const [events, setEvents] = useState<SpecialEvent[]>([]);
   const [loading, setLoading] = useState(true);

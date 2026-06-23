@@ -54,9 +54,11 @@ interface EventData {
 }
 
 const Index = () => {
-  const { user, profile, isAdmin, isSpecialUser, isApproved, signOut, loading } = useAuth();
+  const { user, profile, isMasterAdmin, isSpecialUser, isApproved, signOut, loading } = useAuth();
+  const isAdmin = isMasterAdmin;
   const [tab, setTab] = useState<Tab>("escala");
   const [events, setEvents] = useState<EventData[]>([]);
+  const [specialEventIds, setSpecialEventIds] = useState<Set<string>>(new Set());
   const [eventsLoading, setEventsLoading] = useState(true);
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [scaleTab, setScaleTab] = useState<ScaleTab>("open");
@@ -107,6 +109,13 @@ const Index = () => {
     }));
 
     setEvents(mapped);
+
+    const { data: specialEventsData } = await supabase
+      .from("special_events")
+      .select("event_id")
+      .not("event_id", "is", null);
+    setSpecialEventIds(new Set((specialEventsData ?? []).map((s: any) => s.event_id)));
+
     setEventsLoading(false);
   }, []);
 
@@ -285,7 +294,7 @@ const Index = () => {
             <div className="space-y-3">
               {events.map((event, i) => (
                 <motion.div key={event.id} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.03 }}>
-                  <EventCard event={event} onRefresh={fetchEvents} />
+                  <EventCard event={event} onRefresh={fetchEvents} isSpecialEvent={specialEventIds.has(event.id)} />
                 </motion.div>
               ))}
             </div>

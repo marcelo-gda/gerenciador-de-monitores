@@ -141,6 +141,31 @@ const FinalizeScaleDialog = ({ eventId, eventTitle, monitors, onClose, onFinaliz
         }));
         await supabase.from("messages").insert(notifications);
       }
+
+      // Enviar email para escalados
+      try {
+        await supabase.functions.invoke("send-scale-email", {
+          body: {
+            user_ids: selectedMonitors.map((m) => m.user_id),
+            subject: `✅ Você foi escalado(a) — ${eventTitle}`,
+            html: `
+              <div style="font-family:sans-serif;max-width:480px;margin:0 auto;padding:24px">
+                <h2 style="color:#7c3aed">✅ Você foi escalado(a)!</h2>
+                <p>Olá! Você foi confirmado(a) na escala do evento:</p>
+                <div style="background:#f5f3ff;border-radius:8px;padding:16px;margin:16px 0">
+                  <strong style="font-size:18px">${eventTitle}</strong>
+                </div>
+                <p style="color:#6b7280;font-size:14px">
+                  Acesse o app GDA Escalas para ver os detalhes completos.
+                </p>
+              </div>
+            `,
+          },
+        });
+      } catch (e) {
+        console.error("Erro ao enviar email de escala:", e);
+      }
+
       toast.success("Escala finalizada com sucesso!");
     } else {
       toast.success("✅ Escala salva!");
