@@ -1,11 +1,11 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const RESEND_KEY = Deno.env.get("RESEND_API_KEY")!;
+const BREVO_KEY = Deno.env.get("BREVO_API_KEY")!;
 const SUPA_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPA_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
-const FROM_EMAIL = "GDA Escalas <escalas@seudominio.com>"; // troque pelo seu domínio verificado
+const SENDER = { name: "GDA Escalas", email: "marceloparreiras@gmail.com" };
 
 serve(async (req) => {
   try {
@@ -26,16 +26,21 @@ serve(async (req) => {
       return new Response(JSON.stringify({ error: "Nenhum email encontrado" }), { status: 400 });
     }
 
-    // Envia um email por monitor (privacidade — sem CC entre eles)
+    // Envia um email por monitor (privacidade)
     const results = await Promise.all(
-      emails.map((to) =>
-        fetch("https://api.resend.com/emails", {
+      emails.map((email) =>
+        fetch("https://api.brevo.com/v3/smtp/email", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            Authorization: `Bearer ${RESEND_KEY}`,
+            "api-key": BREVO_KEY,
           },
-          body: JSON.stringify({ from: FROM_EMAIL, to, subject, html }),
+          body: JSON.stringify({
+            sender: SENDER,
+            to: [{ email }],
+            subject,
+            htmlContent: html,
+          }),
         }).then((r) => r.json())
       )
     );

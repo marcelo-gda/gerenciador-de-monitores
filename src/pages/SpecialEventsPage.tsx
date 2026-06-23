@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { Link } from "react-router-dom";
 import {
   ArrowLeft, Plus, ChevronDown, ChevronRight, X, Save,
-  Loader2, Trash2, Check, ArrowUpDown, ChevronUp, CheckCircle2,
+  Loader2, Trash2, Check, ArrowUpDown, ChevronUp, CheckCircle2, Mail,
 } from "lucide-react";
 import AppNavbar from "@/components/AppNavbar";
 import { supabase } from "@/integrations/supabase/client";
@@ -322,6 +322,7 @@ const SpecialEventsPage = () => {
   const [signupSortField, setSignupSortField] = useState<"name" | "cargo" | "funcao">("name");
   const [signupSortDir, setSignupSortDir] = useState<"asc" | "desc">("asc");
   const [savingModal, setSavingModal] = useState(false);
+  const [notifying, setNotifying] = useState<string | null>(null);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -503,6 +504,111 @@ const SpecialEventsPage = () => {
     if (error) { toast.error("Erro ao remover evento especial"); return; }
     toast.success("Evento especial removido");
     fetchData();
+  };
+
+  const handleNotifyMonitors = async (ev: SpecialEvent) => {
+    const byUser: Record<string, {
+      display_name: string;
+      rows: { date: string; time_start: string | null; time_end: string | null; fn_emoji: string; fn_name: string; value: number }[];
+    }> = {};
+
+    for (const day of ev.special_event_days) {
+      for (const fn of (day as any).special_event_functions ?? []) {
+        for (const a of fn.special_event_assignments ?? []) {
+          if (a.status !== "confirmed") continue;
+          if (!byUser[a.user_id]) {
+            byUser[a.user_id] = { display_name: a.profiles?.display_name ?? "Monitor", rows: [] };
+          }
+          byUser[a.user_id].rows.push({
+            date: day.date,
+            time_start: fn.time_start,
+            time_end: fn.time_end,
+            fn_emoji: fn.emoji,
+            fn_name: fn.name,
+            value: fn.hours * fn.hourly_rate,
+          });
+        }
+      }
+    }
+
+    const userIds = Object.keys(byUser);
+    if (userIds.length === 0) { toast.error("Nenhum monitor confirmado para notificar"); return; }
+
+    setNotifying(ev.id);
+    const subject = `Você foi escalado — ${ev.title}`;
+    let successCount = 0;
+
+    for (const uid of userIds) {
+      const { display_name, rows } = byUser[uid];
+      rows.sort((a, b) => a.date.localeCompare(b.date));
+      const total = rows.reduce((sum, r) => sum + r.value, 0);
+
+      const tableRows = rows.map((r) => {
+        const dateStr = new Date(r.date + "T12:00:00").toLocaleDateString("pt-BR", {
+          day: "2-digit", month: "2-digit", weekday: "short",
+        });
+        const timeStr = r.time_start && r.time_end
+          ? `${r.time_start.slice(0, 5)} – ${r.time_end.slice(0, 5)}`
+          : "A definir";
+        return `
+          <tr>
+            <td style="padding:8px 12px;border-bottom:1px solid #eee;color:#374151;">${dateStr}</td>
+            <td style="padding:8px 12px;border-bottom:1px solid #eee;color:#374151;">${timeStr}</td>
+            <td style="padding:8px 12px;border-bottom:1px solid #eee;color:#374151;">${r.fn_emoji} ${r.fn_name}</td>
+            <td style="padding:8px 12px;border-bottom:1px solid #eee;color:#374151;text-align:right;">R$ ${r.value.toFixed(2)}</td>
+          </tr>`;
+      }).join("");
+
+      const html = `<!DOCTYPE html>
+<html lang="pt-BR">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"></head>
+<body style="margin:0;padding:0;background:#f5f5f5;font-family:Arial,sans-serif;">
+  <div style="max-width:600px;margin:32px auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.08);">
+    <div style="background:#4f46e5;padding:24px 32px;">
+      <p style="margin:0;color:#c7d2fe;font-size:12px;letter-spacing:1px;text-transform:uppercase;">GDA Escalas</p>
+      <h1 style="margin:6px 0 0;color:#fff;font-size:20px;font-weight:700;">⭐ ${ev.title}</h1>
+    </div>
+    <div style="padding:32px;">
+      <p style="margin:0 0 8px;color:#374151;font-size:15px;">Olá, <strong>${display_name}</strong>!</p>
+      <p style="margin:0 0 24px;color:#374151;font-size:15px;">Você foi escalado para o evento <strong>${ev.title}</strong>. Confira seus dias confirmados:</p>
+      <table style="width:100%;border-collapse:collapse;font-size:14px;">
+        <thead>
+          <tr style="background:#f9fafb;">
+            <th style="padding:10px 12px;text-align:left;color:#6b7280;font-weight:600;border-bottom:2px solid #e5e7eb;">Data</th>
+            <th style="padding:10px 12px;text-align:left;color:#6b7280;font-weight:600;border-bottom:2px solid #e5e7eb;">Horário</th>
+            <th style="padding:10px 12px;text-align:left;color:#6b7280;font-weight:600;border-bottom:2px solid #e5e7eb;">Função</th>
+            <th style="padding:10px 12px;text-align:right;color:#6b7280;font-weight:600;border-bottom:2px solid #e5e7eb;">Valor</th>
+          </tr>
+        </thead>
+        <tbody>${tableRows}</tbody>
+        <tfoot>
+          <tr>
+            <td colspan="3" style="padding:14px 12px;text-align:right;font-weight:700;color:#111827;font-size:15px;">Total:</td>
+            <td style="padding:14px 12px;text-align:right;font-weight:700;color:#4f46e5;font-size:15px;">R$ ${total.toFixed(2)}</td>
+          </tr>
+        </tfoot>
+      </table>
+      <p style="margin:24px 0 0;color:#6b7280;font-size:13px;">Qualquer dúvida, entre em contato com a coordenação.</p>
+    </div>
+    <div style="background:#f9fafb;padding:16px 32px;border-top:1px solid #e5e7eb;">
+      <p style="margin:0;color:#9ca3af;font-size:12px;text-align:center;">GDA Escalas · Este é um email automático</p>
+    </div>
+  </div>
+</body>
+</html>`;
+
+      const { error } = await supabase.functions.invoke("send-scale-email", {
+        body: { user_ids: [uid], subject, html },
+      });
+      if (!error) successCount++;
+    }
+
+    setNotifying(null);
+    if (successCount === userIds.length) {
+      toast.success(`Notificações enviadas para ${successCount} monitor${successCount > 1 ? "es" : ""}!`);
+    } else {
+      toast.error(`${successCount}/${userIds.length} emails enviados.`);
+    }
   };
 
   // ── Render helpers ─────────────────────────────────────────────────────────
@@ -694,6 +800,19 @@ const SpecialEventsPage = () => {
               <button onClick={() => handleRemoveSpecialEvent(ev.id)}
                 className="rounded-lg p-1.5 text-destructive hover:bg-destructive/10" title="Remover evento especial">
                 <Trash2 className="h-4 w-4" />
+              </button>
+            )}
+            {isAdmin && (
+              <button
+                onClick={() => handleNotifyMonitors(ev)}
+                disabled={notifying === ev.id}
+                className="flex items-center gap-1 rounded-lg border border-border px-2.5 py-1.5 text-xs font-semibold text-muted-foreground hover:bg-muted transition-colors disabled:opacity-50"
+                title="Enviar email para todos os monitores confirmados"
+              >
+                {notifying === ev.id
+                  ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  : <Mail className="h-3.5 w-3.5" />}
+                Notificar
               </button>
             )}
             <button onClick={() => toggleExpand(ev.id)}
