@@ -111,11 +111,7 @@ function parseEventDateTime(gcalEvent: GoogleCalendarEvent) {
   if (gcalEvent.start?.dateTime) {
     const startDt = new Date(startStr);
     const endDt = new Date(endStr);
-    // Extrai a data direto da string (ex: "2026-05-23T23:00:00-03:00" → "2026-05-23")
-    // sem converter para UTC, evitando bug de fuso horário
     eventDate = startStr.substring(0, 10);
-    const rawEndDate = endStr.substring(0, 10);
-    endDate = rawEndDate !== eventDate ? rawEndDate : null;
     startTime = startDt.toLocaleTimeString("pt-BR", {
       hour: "2-digit",
       minute: "2-digit",
@@ -126,6 +122,11 @@ function parseEventDateTime(gcalEvent: GoogleCalendarEvent) {
       minute: "2-digit",
       timeZone: "America/Sao_Paulo",
     });
+    // Usa a data de fim no fuso de Brasília, não UTC
+    const endDateBrasilia = endDt.toLocaleDateString("sv-SE", {
+      timeZone: "America/Sao_Paulo",
+    });
+    endDate = endDateBrasilia !== eventDate ? endDateBrasilia : null;
   } else {
     // All-day event
     eventDate = startStr;

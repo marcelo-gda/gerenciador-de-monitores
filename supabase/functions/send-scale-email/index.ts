@@ -14,10 +14,20 @@ const corsHeaders = {
 
 function formatDate(dateStr: string) {
   const [y, m, d] = dateStr.split("-").map(Number);
-  return new Date(y, m - 1, d).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric" });
+  return new Date(y, m - 1, d).toLocaleDateString("pt-BR", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  });
 }
 
-function buildCalendarUrl(title: string, date: string, endDate: string, startTime: string, endTime: string) {
+function buildCalendarUrl(
+  title: string,
+  date: string,
+  endDate: string,
+  startTime: string,
+  endTime: string
+) {
   const [sy, sm, sd] = date.split("-").map(Number);
   const [ey, em, ed] = endDate.split("-").map(Number);
   const [sh, smin] = startTime.split(":").map(Number);
@@ -29,6 +39,7 @@ function buildCalendarUrl(title: string, date: string, endDate: string, startTim
     action: "TEMPLATE",
     text: title,
     dates: `${start}/${end}`,
+    ctz: "America/Sao_Paulo",
   });
   return `https://calendar.google.com/calendar/render?${params.toString()}`;
 }
@@ -39,7 +50,16 @@ serve(async (req) => {
   }
 
   try {
-    const { user_ids, subject, eventTitle, eventDate, eventEndDate, eventStartTime, eventEndTime, siteUrl } = await req.json();
+    const {
+      user_ids,
+      subject,
+      eventTitle,
+      eventDate,
+      eventEndDate,
+      eventStartTime,
+      eventEndTime,
+      siteUrl,
+    } = await req.json();
 
     const admin = createClient(SUPA_URL, SUPA_KEY, {
       auth: { autoRefreshToken: false, persistSession: false },
@@ -58,11 +78,18 @@ serve(async (req) => {
       });
     }
 
-    const dateLabel = eventDate === eventEndDate
-      ? formatDate(eventDate)
-      : `${formatDate(eventDate)} — ${formatDate(eventEndDate)}`;
+    const dateLabel =
+      eventDate === eventEndDate
+        ? formatDate(eventDate)
+        : `${formatDate(eventDate)} — ${formatDate(eventEndDate)}`;
 
-    const calendarUrl = buildCalendarUrl(eventTitle, eventDate, eventEndDate, eventStartTime, eventEndTime);
+    const calendarUrl = buildCalendarUrl(
+      eventTitle,
+      eventDate,
+      eventEndDate,
+      eventStartTime,
+      eventEndTime
+    );
 
     const html = `
       <div style="font-family:sans-serif;max-width:480px;margin:0 auto;padding:24px;color:#1f2937">
@@ -75,9 +102,9 @@ serve(async (req) => {
           <p style="margin:0 0 4px;font-size:14px">📅 ${dateLabel}</p>
           <p style="margin:0;font-size:14px">🕐 ${eventStartTime} — ${eventEndTime}</p>
         </div>
-        <div style="display:flex;flex-direction:column;gap:10px;margin:24px 0">
+        <div style="margin:24px 0">
           <a href="${calendarUrl}" target="_blank"
-            style="display:block;text-align:center;background:#f5f3ff;color:#7c3aed;border:1px solid #ddd6fe;border-radius:8px;padding:12px 16px;font-size:14px;font-weight:600;text-decoration:none">
+            style="display:block;text-align:center;background:#f5f3ff;color:#7c3aed;border:1px solid #ddd6fe;border-radius:8px;padding:12px 16px;font-size:14px;font-weight:600;text-decoration:none;margin-bottom:10px">
             📆 Adicionar ao Google Calendar
           </a>
           <a href="${siteUrl}" target="_blank"
