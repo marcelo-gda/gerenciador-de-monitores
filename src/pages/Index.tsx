@@ -109,14 +109,17 @@ const Index = () => {
     }));
 
     setEvents(mapped);
+    setEventsLoading(false);
+  }, []);
 
-    const { data: specialEventsData } = await supabase
+  useEffect(() => {
+    supabase
       .from("special_events")
       .select("event_id")
-      .not("event_id", "is", null);
-    setSpecialEventIds(new Set((specialEventsData ?? []).map((s: any) => s.event_id)));
-
-    setEventsLoading(false);
+      .not("event_id", "is", null)
+      .then(({ data }) => {
+        if (data) setSpecialEventIds(new Set(data.map((r: any) => r.event_id).filter(Boolean)));
+      });
   }, []);
 
   // Fetch unread message count for all users

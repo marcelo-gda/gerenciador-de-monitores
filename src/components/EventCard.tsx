@@ -125,8 +125,15 @@ const EventCard = ({ event, onRefresh, isSpecialEvent = false }: EventCardProps)
   }, [isAdmin]);
 
   useEffect(() => {
-    setLocalMonitors(event.monitors);
-  }, [event.monitors]);
+    // Só atualiza localMonitors se o FinalizeScaleDialog NÃO estiver aberto.
+    // Quando o dialog está aberto e handleFinalize grava is_locked na tabela events,
+    // a subscription real-time dispara fetchEvents, event.monitors muda de referência,
+    // e este useEffect rodaria — atualizando localMonitors e remontando o dialog
+    // com estado zerado, antes das gravações de is_confirmed terminarem.
+    if (!showFinalize) {
+      setLocalMonitors(event.monitors);
+    }
+  }, [event.monitors, showFinalize]);
 
   const monitorCount = localMonitors.length;
   const isUserInEvent = localMonitors.some((m) => m.user_id === user?.id);
@@ -230,6 +237,7 @@ const EventCard = ({ event, onRefresh, isSpecialEvent = false }: EventCardProps)
         <div className="mb-3 flex items-start justify-between gap-2">
           <div className="min-w-0 flex-1">
             <button
+              type="button"
               onClick={() => setShowDetailModal(true)}
               className="text-left w-full hover:underline"
             >
@@ -273,6 +281,7 @@ const EventCard = ({ event, onRefresh, isSpecialEvent = false }: EventCardProps)
             )}
             {isAdmin && (
               <button
+                type="button"
                 onClick={() => setShowEditModal(true)}
                 className="rounded-lg p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
                 title="Editar evento"
@@ -339,6 +348,7 @@ const EventCard = ({ event, onRefresh, isSpecialEvent = false }: EventCardProps)
                 >
                   {isAdmin && !isFinalized && !isPastEvent ? (
                     <button
+                      type="button"
                       onClick={() => togglePreSelect(monitor.user_id)}
                       className="flex items-center gap-0"
                       title={isPreSelected ? "Desmarcar monitor" : "Escalar monitor"}
@@ -352,6 +362,7 @@ const EventCard = ({ event, onRefresh, isSpecialEvent = false }: EventCardProps)
                   )}
                   {isAdmin ? (
                     <button
+                      type="button"
                       onClick={(e) => { e.stopPropagation(); setViewingMonitorId(monitor.user_id); }}
                       className="hover:underline"
                     >
@@ -406,6 +417,7 @@ const EventCard = ({ event, onRefresh, isSpecialEvent = false }: EventCardProps)
                   ) : null}
                   {!event.is_locked && !isPastEvent && monitor.user_id === user?.id && (
                     <button
+                      type="button"
                       onClick={handleLeave}
                       className="ml-0.5 rounded-full p-0.5 opacity-0 transition-opacity group-hover:opacity-100 hover:bg-destructive/10"
                       aria-label="Sair da escala"
@@ -415,6 +427,7 @@ const EventCard = ({ event, onRefresh, isSpecialEvent = false }: EventCardProps)
                   )}
                   {!event.is_locked && !isPastEvent && isAdmin && monitor.user_id !== user?.id && (
                     <button
+                      type="button"
                       onClick={() => setRejectingMonitor({ userId: monitor.user_id, name: monitor.display_name })}
                       className="ml-0.5 rounded-full p-0.5 opacity-0 transition-opacity group-hover:opacity-100 hover:bg-destructive/10"
                       aria-label={`Rejeitar ${monitor.display_name}`}
@@ -435,13 +448,13 @@ const EventCard = ({ event, onRefresh, isSpecialEvent = false }: EventCardProps)
         {/* Actions */}
         <div className="flex flex-wrap gap-2">
           {isComingSoon && !isPastEvent && (
-            <button disabled
+            <button type="button" disabled
               className="flex items-center gap-1.5 rounded-lg border-2 border-dashed border-muted-foreground/30 px-4 py-2 text-sm font-semibold text-muted-foreground cursor-not-allowed opacity-60">
               🕐 Inscrições abrem em {diffDays - 30} dia{diffDays - 30 !== 1 ? "s" : ""}
             </button>
           )}
           {canJoin && !isSpecialEvent && (
-            <button onClick={handleJoin}
+            <button type="button" onClick={handleJoin}
               className="flex items-center gap-1.5 rounded-lg border-2 border-dashed border-primary/40 px-4 py-2 text-sm font-semibold text-primary transition-colors hover:border-primary hover:bg-primary/5">
               <Plus className="h-4 w-4" />Entrar na escala
             </button>
@@ -453,7 +466,7 @@ const EventCard = ({ event, onRefresh, isSpecialEvent = false }: EventCardProps)
             </div>
           )}
           {canLeave && (
-            <button onClick={handleLeave}
+            <button type="button" onClick={handleLeave}
               className="flex items-center gap-1.5 rounded-lg border border-destructive/30 px-4 py-2 text-sm font-semibold text-destructive transition-colors hover:bg-destructive/5">
               <X className="h-4 w-4" />Sair da escala
             </button>
@@ -462,11 +475,11 @@ const EventCard = ({ event, onRefresh, isSpecialEvent = false }: EventCardProps)
             <div className="flex gap-1.5 ml-auto">
               {event.is_deleted ? (
                 <>
-                  <button onClick={handleRestore}
+                  <button type="button" onClick={handleRestore}
                     className="rounded-lg bg-emerald-100 px-3 py-2 text-xs font-semibold text-emerald-700 hover:bg-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-400" title="Restaurar evento">
                     <RotateCcw className="h-3.5 w-3.5" />
                   </button>
-                  <button onClick={handlePermanentDelete}
+                  <button type="button" onClick={handlePermanentDelete}
                     className="rounded-lg bg-destructive/10 px-3 py-2 text-xs text-destructive hover:bg-destructive/20" title="Deletar permanentemente">
                     <Trash2 className="h-3.5 w-3.5" />
                   </button>
@@ -474,21 +487,21 @@ const EventCard = ({ event, onRefresh, isSpecialEvent = false }: EventCardProps)
               ) : (
                 <>
                   {isFinalized && (
-                    <button onClick={handleToggleLock}
+                    <button type="button" onClick={handleToggleLock}
                       className="rounded-lg bg-secondary/20 px-3 py-2 text-xs font-semibold text-secondary hover:bg-secondary/30" title="Reabrir escala">
                       <RotateCcw className="h-3.5 w-3.5" />
                     </button>
                   )}
                   {!isFinalized && localMonitors.length > 0 && (
-                    <button onClick={() => setShowFinalize(true)}
+                    <button type="button" onClick={() => setShowFinalize(true)}
                       className="rounded-lg bg-emerald-100 px-3 py-2 text-xs font-semibold text-emerald-700 hover:bg-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-400" title="Finalizar escala">
                       <ClipboardCheck className="h-3.5 w-3.5" />
                     </button>
                   )}
-                  <button onClick={handleCopyWhatsApp} className="rounded-lg bg-muted px-3 py-2 text-xs text-muted-foreground hover:bg-muted/80" title="Copiar para WhatsApp">
+                  <button type="button" onClick={handleCopyWhatsApp} className="rounded-lg bg-muted px-3 py-2 text-xs text-muted-foreground hover:bg-muted/80" title="Copiar para WhatsApp">
                     <Copy className="h-3.5 w-3.5" />
                   </button>
-                  <button onClick={handleSoftDelete} className="rounded-lg bg-destructive/10 px-3 py-2 text-xs text-destructive hover:bg-destructive/20" title="Mover para lixeira">
+                  <button type="button" onClick={handleSoftDelete} className="rounded-lg bg-destructive/10 px-3 py-2 text-xs text-destructive hover:bg-destructive/20" title="Mover para lixeira">
                     <Trash2 className="h-3.5 w-3.5" />
                   </button>
                 </>
@@ -518,6 +531,10 @@ const EventCard = ({ event, onRefresh, isSpecialEvent = false }: EventCardProps)
         <FinalizeScaleDialog
           eventId={event.id}
           eventTitle={event.title}
+          eventDate={event.event_date}
+          eventEndDate={event.end_date || event.event_date}
+          eventStartTime={event.start_time}
+          eventEndTime={event.end_time}
           monitors={localMonitors}
           onClose={() => setShowFinalize(false)}
           onFinalized={onRefresh}

@@ -43,12 +43,16 @@ interface Monitor {
 interface Props {
   eventId: string;
   eventTitle: string;
+  eventDate: string;
+  eventEndDate: string;
+  eventStartTime: string;
+  eventEndTime: string;
   monitors: Monitor[];
   onClose: () => void;
   onFinalized: () => void;
 }
 
-const FinalizeScaleDialog = ({ eventId, eventTitle, monitors, onClose, onFinalized }: Props) => {
+const FinalizeScaleDialog = ({ eventId, eventTitle, eventDate, eventEndDate, eventStartTime, eventEndTime, monitors, onClose, onFinalized }: Props) => {
   const { user } = useAuth();
   const [hierarchies, setHierarchies] = useState<Hierarchy[]>([]);
   const [saving, setSaving] = useState(false);
@@ -102,14 +106,16 @@ const FinalizeScaleDialog = ({ eventId, eventTitle, monitors, onClose, onFinaliz
   const selectedMonitors = monitors.filter((m) => selected.has(m.user_id));
 
   const saveChanges = async (lock: boolean) => {
+    const toConfirm = monitors.filter((m) => selected.has(m.user_id));
+    const levelsCopy = { ...levels };
     if (lock) {
-      if (selectedMonitors.length === 0) { toast.error("Selecione ao menos um monitor para escalar"); return; }
-      const missingLevel = selectedMonitors.some((m) => !levels[m.user_id]);
+      if (toConfirm.length === 0) { toast.error("Selecione ao menos um monitor para escalar"); return; }
+      const missingLevel = toConfirm.some((m) => !levelsCopy[m.user_id]);
       if (missingLevel) { toast.error("Defina o cargo de todos os monitores escalados"); return; }
     }
 
     // Snapshot dos selecionados e dos previamente confirmados no momento da chamada
-    const monitorsToSave = selectedMonitors;
+    const monitorsToSave = toConfirm;
     const previouslyConfirmedIds = new Set(monitors.filter((m) => m.is_confirmed).map((m) => m.user_id));
 
     lock ? setSaving(true) : setSavingDraft(true);
@@ -121,7 +127,7 @@ const FinalizeScaleDialog = ({ eventId, eventTitle, monitors, onClose, onFinaliz
         .from("event_monitors")
         .update({
           is_confirmed: true,
-          level: levels[m.user_id] || null,
+          level: levelsCopy[m.user_id] || null,
           bonus_tags: bonusTags[m.user_id] ? [bonusTags[m.user_id]] : [],
         })
         .eq("event_id", eventId)
@@ -137,7 +143,7 @@ const FinalizeScaleDialog = ({ eventId, eventTitle, monitors, onClose, onFinaliz
         const notifications = newlyConfirmed.map((m) => ({
           sender_id: user.id,
           recipient_id: m.user_id,
-          content: `✅ Você foi escalado(a) para "${eventTitle}" como ${hierarchyLabel(levels[m.user_id])}!\n🗓️ Acesse o evento na escala para ver detalhes e adicionar à sua agenda.`,
+          content: `✅ Você foi escalado(a) para "${eventTitle}" como ${hierarchyLabel(levelsCopy[m.user_id])}!\n🗓️ Acesse o evento na escala para ver detalhes e adicionar à sua agenda.`,
         }));
         await supabase.from("messages").insert(notifications);
       }
@@ -146,24 +152,19 @@ const FinalizeScaleDialog = ({ eventId, eventTitle, monitors, onClose, onFinaliz
       try {
         await supabase.functions.invoke("send-scale-email", {
           body: {
-            user_ids: selectedMonitors.map((m) => m.user_id),
+            user_ids: toConfirm.map((m) => m.user_id),
             subject: `✅ Você foi escalado(a) — ${eventTitle}`,
-            html: `
-              <div style="font-family:sans-serif;max-width:480px;margin:0 auto;padding:24px">
-                <h2 style="color:#7c3aed">✅ Você foi escalado(a)!</h2>
-                <p>Olá! Você foi confirmado(a) na escala do evento:</p>
-                <div style="background:#f5f3ff;border-radius:8px;padding:16px;margin:16px 0">
-                  <strong style="font-size:18px">${eventTitle}</strong>
-                </div>
-                <p style="color:#6b7280;font-size:14px">
-                  Acesse o app GDA Escalas para ver os detalhes completos.
-                </p>
-              </div>
-            `,
+            eventTitle,
+            eventDate,
+            eventEndDate,
+            eventStartTime,
+            eventEndTime,
+            siteUrl: "https://SEU_SITE_AQUI.com",
           },
         });
       } catch (e) {
         console.error("Erro ao enviar email de escala:", e);
+        toast.error(`Erro no email: ${String(e)}`);
       }
 
       toast.success("Escala finalizada com sucesso!");
@@ -172,8 +173,8 @@ const FinalizeScaleDialog = ({ eventId, eventTitle, monitors, onClose, onFinaliz
     }
 
     lock ? setSaving(false) : setSavingDraft(false);
-    onFinalized();
     if (lock) onClose();
+    onFinalized();
   };
 
   return (
@@ -189,7 +190,7 @@ const FinalizeScaleDialog = ({ eventId, eventTitle, monitors, onClose, onFinaliz
             <CheckCircle2 className="mr-1 inline h-5 w-5 text-camp" />
             Finalizar Escala
           </h2>
-          <button onClick={onClose} className="rounded-lg p-1 text-muted-foreground hover:bg-muted">
+          <button type="button" onClick={onClose} className="rounded-lg p-1 text-muted-foreground hover:bg-muted">
             <X className="h-5 w-5" />
           </button>
         </div>
@@ -215,7 +216,7 @@ const FinalizeScaleDialog = ({ eventId, eventTitle, monitors, onClose, onFinaliz
                   isSelected ? "border-camp bg-camp/10" : "border-border bg-background hover:border-border/80"
                 }`}
               >
-                <div className="flex items-center gap-3 cursor-pointer" onClick={() => toggleMonitor(m.user_id)}>
+                <button type="button" className="flex items-center gap-3 flex-1 min-w-0 text-left" onClick={() => toggleMonitor(m.user_id)}>
                   {isSelected ? (
                     <CheckCircle2 className="h-5 w-5 text-camp shrink-0" />
                   ) : (
@@ -230,6 +231,7 @@ const FinalizeScaleDialog = ({ eventId, eventTitle, monitors, onClose, onFinaliz
                         value={levels[m.user_id] || ""}
                         onChange={(e) => { e.stopPropagation(); setLevels({ ...levels, [m.user_id]: e.target.value as MonitorLevel }); }}
                         onClick={(e) => e.stopPropagation()}
+                        onMouseDown={(e) => e.stopPropagation()}
                         className={`shrink-0 rounded-md px-2 py-1 text-xs font-semibold outline-none border cursor-pointer ${
                           levels[m.user_id] ? levelColors[levels[m.user_id]] : "border-border bg-background text-muted-foreground"
                         }`}
@@ -244,6 +246,7 @@ const FinalizeScaleDialog = ({ eventId, eventTitle, monitors, onClose, onFinaliz
                           value={bonusTags[m.user_id] || ""}
                           onChange={(e) => { e.stopPropagation(); setBonusTags({ ...bonusTags, [m.user_id]: e.target.value }); }}
                           onClick={(e) => e.stopPropagation()}
+                          onMouseDown={(e) => e.stopPropagation()}
                           className="shrink-0 rounded-md px-2 py-1 text-xs font-semibold outline-none border border-border bg-background text-muted-foreground cursor-pointer"
                         >
                           <option value="">Função...</option>
@@ -254,7 +257,7 @@ const FinalizeScaleDialog = ({ eventId, eventTitle, monitors, onClose, onFinaliz
                       )}
                     </>
                   )}
-                </div>
+                </button>
               </div>
             );
           })}
@@ -262,10 +265,11 @@ const FinalizeScaleDialog = ({ eventId, eventTitle, monitors, onClose, onFinaliz
 
         {/* Footer */}
         <div className="flex gap-2 border-t border-border p-5">
-          <button onClick={onClose} className="rounded-lg border border-border px-3 py-2 text-sm font-semibold text-muted-foreground hover:bg-muted">
+          <button type="button" onClick={onClose} className="rounded-lg border border-border px-3 py-2 text-sm font-semibold text-muted-foreground hover:bg-muted">
             Cancelar
           </button>
           <button
+            type="button"
             onClick={() => saveChanges(false)}
             disabled={savingDraft}
             className="flex items-center gap-1.5 rounded-lg border border-primary/30 bg-primary/10 px-3 py-2 text-sm font-semibold text-primary hover:bg-primary/20 disabled:opacity-50"
@@ -274,6 +278,7 @@ const FinalizeScaleDialog = ({ eventId, eventTitle, monitors, onClose, onFinaliz
             {savingDraft ? "Salvando..." : "Salvar"}
           </button>
           <button
+            type="button"
             onClick={() => saveChanges(true)}
             disabled={saving || selectedMonitors.length === 0}
             className="flex-1 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
