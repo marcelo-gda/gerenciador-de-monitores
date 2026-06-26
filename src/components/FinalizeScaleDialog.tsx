@@ -140,10 +140,18 @@ const FinalizeScaleDialog = ({ eventId, eventTitle, eventDate, eventEndDate, eve
         const hierarchyLabel = (slug: string) => { const h = hierarchies.find((h) => h.slug === slug); return h ? `${h.emoji} ${h.name}` : slug; };
         // Notifica apenas quem está sendo confirmado agora (evita duplicatas e notifica desmarcados)
         const newlyConfirmed = monitorsToSave.filter((m) => !previouslyConfirmedIds.has(m.user_id));
+        const pad = (n: number) => String(n).padStart(2, "0");
+        const [sy, sm, sd] = eventDate.split("-").map(Number);
+        const [ey, em, ed] = eventEndDate.split("-").map(Number);
+        const [sh, smin] = eventStartTime.split(":").map(Number);
+        const [eh, emin] = eventEndTime.split(":").map(Number);
+        const calStart = `${sy}${pad(sm)}${pad(sd)}T${pad(sh)}${pad(smin)}00`;
+        const calEnd = `${ey}${pad(em)}${pad(ed)}T${pad(eh)}${pad(emin)}00`;
+        const calendarLink = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(eventTitle)}&dates=${calStart}/${calEnd}&ctz=America%2FSao_Paulo`;
         const notifications = newlyConfirmed.map((m) => ({
           sender_id: user.id,
           recipient_id: m.user_id,
-          content: `✅ Você foi escalado(a) para "${eventTitle}" como ${hierarchyLabel(levelsCopy[m.user_id])}!\n🗓️ Acesse o evento na escala para ver detalhes e adicionar à sua agenda.`,
+          content: `✅ Você foi escalado(a) para "${eventTitle}" como ${hierarchyLabel(levelsCopy[m.user_id])}!\n\n📆 Adicionar ao Google Calendar:\n${calendarLink}`,
         }));
         await supabase.from("messages").insert(notifications);
       }

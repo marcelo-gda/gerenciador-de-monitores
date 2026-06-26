@@ -285,7 +285,18 @@ const InboxPage = () => {
                               {fmtDate(msg.created_at)}
                             </span>
                           </div>
-                          <p className="text-sm text-foreground whitespace-pre-wrap">{msg.content}</p>
+                          <p className="text-sm text-foreground whitespace-pre-wrap">
+                            {msg.content.split(/(https?:\/\/[^\s]+)/g).map((part, i) =>
+                              /^https?:\/\//.test(part) ? (
+                                <a key={i} href={part} target="_blank" rel="noopener noreferrer"
+                                  className="text-primary underline break-all">
+                                  {part}
+                                </a>
+                              ) : (
+                                part
+                              )
+                            )}
+                          </p>
                         </>
                       )}
 
