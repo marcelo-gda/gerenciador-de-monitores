@@ -78,7 +78,7 @@ export default function SpecialEventsDashboard() {
   const [saving, setSaving] = useState<Set<string>>(new Set());
   const [localHierarchy, setLocalHierarchy] = useState<Record<string, string>>({});
   const [localRole, setLocalRole] = useState<Record<string, string>>({});
-  const [sortBy, setSortBy] = useState<"name" | "days" | "hierarchy">("days");
+  const [sortBy, setSortBy] = useState<"name" | "days" | "hierarchy" | "role" | null>("days");
 
   if (!isMasterAdmin) {
     navigate("/");
@@ -232,6 +232,7 @@ export default function SpecialEventsDashboard() {
 
   const sortedMonitors = useCallback(() => {
     const rows = visibleMonitors();
+    if (sortBy === null) return rows;
     return [...rows].sort((a, b) => {
       if (sortBy === "name") {
         const aName = a.nickname ?? a.display_name;
@@ -248,9 +249,19 @@ export default function SpecialEventsDashboard() {
         const bOrder = bHier?.sort_order ?? 9999;
         return aOrder - bOrder;
       }
+      if (sortBy === "role") {
+        const aRole = gdcRoles.find((r) => r.id === (localRole[a.user_id] || a.role_id_1));
+        const bRole = gdcRoles.find((r) => r.id === (localRole[b.user_id] || b.role_id_1));
+        const aName = aRole?.name ?? "";
+        const bName = bRole?.name ?? "";
+        if (!aName && !bName) return 0;
+        if (!aName) return 1;
+        if (!bName) return -1;
+        return aName.localeCompare(bName, "pt-BR");
+      }
       return 0;
     });
-  }, [visibleMonitors, sortBy, gdcHierarchies]);
+  }, [visibleMonitors, sortBy, gdcHierarchies, gdcRoles, localHierarchy, localRole]);
 
   function toggleSelectedEvent(evId: string) {
     setSelectedEventIds((prev) => {
@@ -404,20 +415,17 @@ export default function SpecialEventsDashboard() {
         <div className="mb-3 flex items-center gap-2">
           <Filter className="h-4 w-4 text-muted-foreground" />
           <span className="text-xs text-muted-foreground">Ordenar:</span>
-          {(["days", "name", "hierarchy"] as const).map((opt) => (
-            <button
-              type="button"
-              key={opt}
-              onClick={() => setSortBy(opt)}
-              className={`rounded-full border px-3 py-1 text-xs font-semibold ${
-                sortBy === opt
-                  ? "border-primary bg-primary text-primary-foreground"
-                  : "border-border text-muted-foreground hover:bg-muted"
-              }`}
-            >
-              {opt === "days" ? "Mais dias" : opt === "name" ? "Nome" : "Hierarquia"}
-            </button>
-          ))}
+          <button
+            type="button"
+            onClick={() => setSortBy(sortBy === "days" ? null : "days")}
+            className={`rounded-full border px-3 py-1 text-xs font-semibold transition-colors ${
+              sortBy === "days"
+                ? "border-primary bg-primary text-primary-foreground"
+                : "border-border text-muted-foreground hover:bg-muted"
+            }`}
+          >
+            Mais dias
+          </button>
         </div>
 
         {/* Table */}
@@ -434,13 +442,31 @@ export default function SpecialEventsDashboard() {
                 {/* Row 1: Event group headers */}
                 <tr className="bg-muted/50">
                   <th className="sticky left-0 z-20 min-w-[160px] border-b border-r border-border bg-muted/50 px-3 py-2 text-left font-semibold">
-                    Monitor
+                    <button type="button" onClick={() => setSortBy(sortBy === "name" ? null : "name")}
+                      className="flex items-center gap-1 hover:text-primary transition-colors">
+                      Monitor
+                      <span className={`text-xs ${sortBy === "name" ? "text-primary" : "text-muted-foreground/50"}`}>
+                        {sortBy === "name" ? "↑" : "↕"}
+                      </span>
+                    </button>
                   </th>
-                  <th className="sticky left-[160px] z-20 min-w-[130px] border-b border-r border-border bg-muted/50 px-2 py-2 text-left font-semibold">
-                    Cargo
+                  <th className="sticky left-[160px] z-20 min-w-[130px] border-b border-r border-border bg-muted/50 px-3 py-2 text-left font-semibold">
+                    <button type="button" onClick={() => setSortBy(sortBy === "hierarchy" ? null : "hierarchy")}
+                      className="flex items-center gap-1 hover:text-primary transition-colors">
+                      Cargo
+                      <span className={`text-xs ${sortBy === "hierarchy" ? "text-primary" : "text-muted-foreground/50"}`}>
+                        {sortBy === "hierarchy" ? "↑" : "↕"}
+                      </span>
+                    </button>
                   </th>
-                  <th className="sticky left-[290px] z-20 min-w-[130px] border-b border-r border-border bg-muted/50 px-2 py-2 text-left font-semibold">
-                    Função
+                  <th className="sticky left-[290px] z-20 min-w-[130px] border-b border-r border-border bg-muted/50 px-3 py-2 text-left font-semibold">
+                    <button type="button" onClick={() => setSortBy(sortBy === "role" ? null : "role")}
+                      className="flex items-center gap-1 hover:text-primary transition-colors">
+                      Função
+                      <span className={`text-xs ${sortBy === "role" ? "text-primary" : "text-muted-foreground/50"}`}>
+                        {sortBy === "role" ? "↑" : "↕"}
+                      </span>
+                    </button>
                   </th>
                   {Array.from(selectedEventIds).map((evId) => {
                     const ev = allEvents.find((e) => e.id === evId);
