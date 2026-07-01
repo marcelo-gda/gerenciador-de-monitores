@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { Link } from "react-router-dom";
 import {
   ArrowLeft, Plus, ChevronDown, ChevronRight, X, Save,
-  Loader2, Trash2, Check, ArrowUpDown, ChevronUp, CheckCircle2, Mail,
+  Loader2, Trash2, Check, ArrowUpDown, ChevronUp, CheckCircle2, Mail, LayoutDashboard,
 } from "lucide-react";
 import AppNavbar from "@/components/AppNavbar";
 import { supabase } from "@/integrations/supabase/client";
@@ -902,10 +902,19 @@ const SpecialEventsPage = () => {
             <h1 className="font-display text-xl font-bold text-foreground">⭐ Eventos Especiais</h1>
           </div>
           {isAdmin && (
-            <button onClick={() => setShowCreate(true)}
-              className="flex items-center gap-1.5 rounded-lg bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90 transition-colors">
-              <Plus className="h-4 w-4" /> Novo
-            </button>
+            <>
+              <Link
+                to="/special-events/dashboard"
+                className="flex items-center gap-1.5 rounded-lg border border-border px-3 py-2 text-sm font-semibold text-muted-foreground hover:bg-muted transition-colors"
+              >
+                <LayoutDashboard className="h-4 w-4" />
+                Dashboard
+              </Link>
+              <button onClick={() => setShowCreate(true)}
+                className="flex items-center gap-1.5 rounded-lg bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90 transition-colors">
+                <Plus className="h-4 w-4" /> Novo
+              </button>
+            </>
           )}
         </div>
 

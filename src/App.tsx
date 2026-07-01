@@ -14,6 +14,7 @@ import EventDetailPage from "./pages/EventDetailPage";
 import ResetPasswordPage from "./pages/ResetPasswordPage";
 import PaymentsPage from "./pages/PaymentsPage";
 import SpecialEventsPage from "./pages/SpecialEventsPage";
+import SpecialEventsDashboard from "./pages/SpecialEventsDashboard";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -50,6 +51,7 @@ const App = () => (
             <Route path="/event/:id" element={<ProtectedRoute><EventDetailPage /></ProtectedRoute>} />
             <Route path="/pagamentos" element={<ProtectedRoute><PaymentsPage /></ProtectedRoute>} />
             <Route path="/special-events" element={<ProtectedRoute><SpecialEventsPage /></ProtectedRoute>} />
+            <Route path="/special-events/dashboard" element={<ProtectedRoute><SpecialEventsDashboard /></ProtectedRoute>} />
             <Route path="*" element={<NotFound />} />
           </Routes>
         </AuthProvider>
