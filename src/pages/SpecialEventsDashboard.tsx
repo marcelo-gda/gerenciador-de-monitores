@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
-import { ArrowLeft, LayoutDashboard, Filter, Save } from "lucide-react";
+import { ArrowLeft, LayoutDashboard, Filter, Save, Trash2 } from "lucide-react";
 import AppNavbar from "@/components/AppNavbar";
 
 interface GdcHierarchy {
@@ -307,6 +307,17 @@ export default function SpecialEventsDashboard() {
     setSelectedPresetId(presetId);
   }
 
+  async function deletePreset(presetId: string) {
+    if (!presetId) return;
+    const { error } = await (supabase as any).from("dashboard_presets").delete().eq("id", presetId);
+    if (error) { toast.error("Erro ao deletar dashboard"); return; }
+    setPresets(prev => prev.filter(p => p.id !== presetId));
+    if (selectedPresetId === presetId) {
+      setSelectedPresetId("");
+    }
+    toast.success("Dashboard deletado!");
+  }
+
   async function toggleStatus(userId: string, dayId: string, signup: DaySignup) {
     const key = `${userId}-${dayId}`;
     const newStatus =
@@ -436,16 +447,28 @@ export default function SpecialEventsDashboard() {
 
           <div className="ml-auto flex flex-wrap items-center gap-2">
             {presets.length > 0 && (
-              <select
-                value={selectedPresetId}
-                onChange={(e) => loadPreset(e.target.value)}
-                className="rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none"
-              >
-                <option value="">— Carregar dashboard —</option>
-                {presets.map(p => (
-                  <option key={p.id} value={p.id}>{p.name}</option>
-                ))}
-              </select>
+              <div className="flex items-center gap-1">
+                <select
+                  value={selectedPresetId}
+                  onChange={(e) => loadPreset(e.target.value)}
+                  className="rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none"
+                >
+                  <option value="">— Carregar dashboard —</option>
+                  {presets.map(p => (
+                    <option key={p.id} value={p.id}>{p.name}</option>
+                  ))}
+                </select>
+                {selectedPresetId && (
+                  <button
+                    type="button"
+                    onClick={() => deletePreset(selectedPresetId)}
+                    className="rounded-lg p-2 text-destructive hover:bg-destructive/10 transition-colors"
+                    title="Deletar dashboard selecionado"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                )}
+              </div>
             )}
             <input
               value={presetName}
@@ -559,9 +582,12 @@ export default function SpecialEventsDashboard() {
                       <th
                         key={evId}
                         colSpan={ev.days.length}
-                        className="border-b border-r border-border px-3 py-2 text-center font-display font-bold text-primary"
+                        className="border-b border-r border-border px-2 py-1 text-center font-display font-bold text-primary text-xs leading-tight max-w-[120px]"
+                        title={ev.title}
                       >
-                        {ev.title}
+                        <span className="block overflow-hidden" style={{ display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
+                          {ev.title}
+                        </span>
                       </th>
                     );
                   })}
