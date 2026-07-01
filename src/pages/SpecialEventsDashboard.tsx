@@ -582,12 +582,12 @@ export default function SpecialEventsDashboard() {
                       <th
                         key={evId}
                         colSpan={ev.days.length}
-                        className="border-b border-r border-border px-2 py-1 text-center font-display font-bold text-primary text-xs leading-tight max-w-[120px]"
+                        className="border-b border-r border-border px-2 py-1 text-center font-display font-bold text-primary text-xs"
                         title={ev.title}
                       >
-                        <span className="block overflow-hidden" style={{ display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
+                        <div style={{ maxWidth: `${ev.days.length * 44}px`, margin: "0 auto", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                           {ev.title}
-                        </span>
+                        </div>
                       </th>
                     );
                   })}
