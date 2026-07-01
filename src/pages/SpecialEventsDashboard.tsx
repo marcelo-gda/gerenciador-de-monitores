@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
-import { ArrowLeft, LayoutDashboard, Filter } from "lucide-react";
+import { ArrowLeft, LayoutDashboard, Filter, Save } from "lucide-react";
 import AppNavbar from "@/components/AppNavbar";
 
 interface GdcHierarchy {
@@ -12,6 +12,7 @@ interface GdcHierarchy {
   name: string;
   slug: string;
   sort_order: number;
+  value_per_day?: number;
 }
 
 interface GdcRole {
@@ -19,6 +20,7 @@ interface GdcRole {
   emoji: string;
   name: string;
   slug: string;
+  value_per_day?: number;
 }
 
 interface DaySignup {
@@ -67,7 +69,7 @@ interface MonitorRow {
 
 export default function SpecialEventsDashboard() {
   const navigate = useNavigate();
-  const { isMasterAdmin } = useAuth();
+  const { isMasterAdmin, user } = useAuth();
 
   const [allEvents, setAllEvents] = useState<SpecialEvent[]>([]);
   const [selectedEventIds, setSelectedEventIds] = useState<Set<string>>(new Set());
@@ -78,7 +80,11 @@ export default function SpecialEventsDashboard() {
   const [saving, setSaving] = useState<Set<string>>(new Set());
   const [localHierarchy, setLocalHierarchy] = useState<Record<string, string>>({});
   const [localRole, setLocalRole] = useState<Record<string, string>>({});
-  const [sortBy, setSortBy] = useState<"name" | "days" | "hierarchy" | "role" | null>("days");
+  const [sortBy, setSortBy] = useState<"name" | "days" | "hierarchy" | "role" | "value" | null>("days");
+  const [presets, setPresets] = useState<{id: string; name: string; event_ids: string[]}[]>([]);
+  const [presetName, setPresetName] = useState("");
+  const [savingPreset, setSavingPreset] = useState(false);
+  const [selectedPresetId, setSelectedPresetId] = useState<string>("");
 
   if (!isMasterAdmin) {
     navigate("/");
@@ -93,11 +99,11 @@ export default function SpecialEventsDashboard() {
           await Promise.all([
             supabase
               .from("gdc_hierarchies")
-              .select("id, emoji, name, slug, sort_order")
+              .select("id, emoji, name, slug, sort_order, value_per_day")
               .order("sort_order"),
             supabase
               .from("gdc_roles")
-              .select("id, emoji, name, slug")
+              .select("id, emoji, name, slug, value_per_day")
               .order("sort_order"),
             supabase
               .from("special_events")
@@ -133,6 +139,9 @@ export default function SpecialEventsDashboard() {
         }));
 
         setAllEvents(mappedEvents);
+
+        const { data: presetsData } = await (supabase as any).from("dashboard_presets").select("id, name, event_ids").order("created_at", { ascending: false });
+        if (presetsData) setPresets(presetsData as any);
 
         const allUserIds = new Set<string>();
         for (const ev of mappedEvents) {
@@ -259,6 +268,9 @@ export default function SpecialEventsDashboard() {
         if (!bName) return -1;
         return aName.localeCompare(bName, "pt-BR");
       }
+      if (sortBy === "value") {
+        return calcMonitorValue(b) - calcMonitorValue(a);
+      }
       return 0;
     });
   }, [visibleMonitors, sortBy, gdcHierarchies, gdcRoles, localHierarchy, localRole]);
@@ -272,9 +284,35 @@ export default function SpecialEventsDashboard() {
     });
   }
 
+  async function savePreset() {
+    if (!presetName.trim()) { toast.error("Digite um nome para o dashboard"); return; }
+    if (selectedEventIds.size === 0) { toast.error("Selecione ao menos um evento"); return; }
+    setSavingPreset(true);
+    const { data, error } = await (supabase as any).from("dashboard_presets").insert({
+      name: presetName.trim(),
+      event_ids: Array.from(selectedEventIds),
+      created_by: user?.id,
+    }).select("id, name, event_ids").single();
+    if (error) { toast.error("Erro ao salvar"); setSavingPreset(false); return; }
+    setPresets(prev => [data as any, ...prev]);
+    setPresetName("");
+    toast.success("Dashboard salvo!");
+    setSavingPreset(false);
+  }
+
+  function loadPreset(presetId: string) {
+    const preset = presets.find(p => p.id === presetId);
+    if (!preset) return;
+    setSelectedEventIds(new Set(preset.event_ids));
+    setSelectedPresetId(presetId);
+  }
+
   async function toggleStatus(userId: string, dayId: string, signup: DaySignup) {
     const key = `${userId}-${dayId}`;
-    const newStatus = signup.status === "confirmed" ? "volunteer" : "confirmed";
+    const newStatus =
+      signup.status === "volunteer" ? "confirmed" :
+      signup.status === "confirmed" ? "confirmed_full" :
+      "volunteer";
 
     setSaving((prev) => new Set(prev).add(key));
     try {
@@ -370,6 +408,17 @@ export default function SpecialEventsDashboard() {
     }
   }
 
+  const calcMonitorValue = (monitor: MonitorRow): number => {
+    const hierValue = gdcHierarchies.find(h => h.id === (localHierarchy[monitor.user_id] || monitor.hierarchy_id))?.value_per_day ?? 0;
+    const roleValue = gdcRoles.find(r => r.id === (localRole[monitor.user_id] || monitor.role_id_1))?.value_per_day ?? 0;
+    let total = 0;
+    for (const [, signup] of monitor.signupMap) {
+      if (signup.status === "confirmed" || signup.status === "confirmed_full") total += Number(hierValue);
+      if (signup.status === "confirmed_full") total += Number(roleValue);
+    }
+    return total;
+  };
+
   const sorted = sortedMonitors();
 
   return (
@@ -378,16 +427,42 @@ export default function SpecialEventsDashboard() {
       <div className="mx-auto max-w-[98vw] px-2 py-6">
 
         {/* Header */}
-        <div className="mb-4 flex items-center gap-3">
-          <button
-            onClick={() => navigate(-1)}
-            type="button"
-            className="rounded-lg p-2 hover:bg-muted"
-          >
+        <div className="mb-4 flex flex-wrap items-center gap-3">
+          <button type="button" onClick={() => navigate(-1)} className="rounded-lg p-2 hover:bg-muted">
             <ArrowLeft className="h-5 w-5" />
           </button>
           <LayoutDashboard className="h-6 w-6 text-primary" />
           <h1 className="font-display text-2xl font-bold">Dashboard de Escalação</h1>
+
+          <div className="ml-auto flex flex-wrap items-center gap-2">
+            {presets.length > 0 && (
+              <select
+                value={selectedPresetId}
+                onChange={(e) => loadPreset(e.target.value)}
+                className="rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none"
+              >
+                <option value="">— Carregar dashboard —</option>
+                {presets.map(p => (
+                  <option key={p.id} value={p.id}>{p.name}</option>
+                ))}
+              </select>
+            )}
+            <input
+              value={presetName}
+              onChange={(e) => setPresetName(e.target.value)}
+              placeholder="Nome do dashboard..."
+              className="rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary w-48"
+            />
+            <button
+              type="button"
+              onClick={savePreset}
+              disabled={savingPreset}
+              className="flex items-center gap-1.5 rounded-lg bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground hover:opacity-90 disabled:opacity-50"
+            >
+              <Save className="h-4 w-4" />
+              Salvar
+            </button>
+          </div>
         </div>
 
         {/* Event selector */}
@@ -468,6 +543,15 @@ export default function SpecialEventsDashboard() {
                       </span>
                     </button>
                   </th>
+                  <th className="border-b border-r border-border bg-muted/50 px-3 py-2 text-left min-w-[90px]">
+                    <button type="button" onClick={() => setSortBy(sortBy === "value" ? null : "value")}
+                      className="flex items-center gap-1 hover:text-primary transition-colors text-xs font-semibold">
+                      Valor
+                      <span className={`text-xs ${sortBy === "value" ? "text-primary" : "text-muted-foreground/50"}`}>
+                        {sortBy === "value" ? "↓" : "↕"}
+                      </span>
+                    </button>
+                  </th>
                   {Array.from(selectedEventIds).map((evId) => {
                     const ev = allEvents.find((e) => e.id === evId);
                     if (!ev) return null;
@@ -487,6 +571,7 @@ export default function SpecialEventsDashboard() {
                   <th className="sticky left-0 z-20 border-b border-r border-border bg-muted/30" />
                   <th className="sticky left-[160px] z-20 border-b border-r border-border bg-muted/30" />
                   <th className="sticky left-[290px] z-20 border-b border-r border-border bg-muted/30" />
+                  <th className="border-b border-r border-border bg-muted/30" />
                   {Array.from(selectedEventIds).map((evId) => {
                     const ev = allEvents.find((e) => e.id === evId);
                     if (!ev) return null;
@@ -544,6 +629,12 @@ export default function SpecialEventsDashboard() {
                         ))}
                       </select>
                     </td>
+                    {/* Value */}
+                    <td className="border-r border-border px-2 py-1 text-xs font-semibold text-right text-camp whitespace-nowrap">
+                      {calcMonitorValue(monitor) > 0
+                        ? `R$ ${calcMonitorValue(monitor).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`
+                        : "—"}
+                    </td>
                     {/* Day cells */}
                     {Array.from(selectedEventIds).map((evId) => {
                       const ev = allEvents.find((e) => e.id === evId);
@@ -551,13 +642,16 @@ export default function SpecialEventsDashboard() {
                       return ev.days.map((day) => {
                         const signup = monitor.signupMap.get(day.id);
                         const isSaving = saving.has(`${monitor.user_id}-${day.id}`);
-                        const bgColor = !signup
-                          ? "bg-muted/40 cursor-not-allowed"
-                          : signup.status === "confirmed"
-                          ? "bg-green-500/80 hover:bg-green-500 cursor-pointer"
-                          : signup.status === "volunteer"
-                          ? "bg-purple-500/80 hover:bg-purple-500 cursor-pointer"
-                          : "bg-muted/40";
+                        const bgColor =
+                          !signup
+                            ? "bg-muted/40 cursor-not-allowed"
+                            : signup.status === "confirmed_full"
+                            ? "bg-yellow-400/90 hover:bg-yellow-400 cursor-pointer"
+                            : signup.status === "confirmed"
+                            ? "bg-green-500/80 hover:bg-green-500 cursor-pointer"
+                            : signup.status === "volunteer"
+                            ? "bg-purple-500/80 hover:bg-purple-500 cursor-pointer"
+                            : "bg-muted/40 cursor-not-allowed";
                         return (
                           <td
                             key={day.id}
@@ -582,12 +676,16 @@ export default function SpecialEventsDashboard() {
                   </td>
                   <td className="sticky left-[160px] z-10 border-r border-border bg-muted/50" />
                   <td className="sticky left-[290px] z-10 border-r border-border bg-muted/50" />
+                  <td className="border-r border-border px-2 py-1.5" />
                   {Array.from(selectedEventIds).map((evId) => {
                     const ev = allEvents.find((e) => e.id === evId);
                     if (!ev) return null;
                     return ev.days.map((day) => {
                       const confirmedCount = monitors.filter(
-                        (m) => m.signupMap.get(day.id)?.status === "confirmed"
+                        (m) => {
+                          const s = m.signupMap.get(day.id)?.status;
+                          return s === "confirmed" || s === "confirmed_full";
+                        }
                       ).length;
                       return (
                         <td
